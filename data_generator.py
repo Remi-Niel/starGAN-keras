@@ -2,6 +2,7 @@ import numpy as np
 import keras
 import random
 from PIL import Image
+import os
 
 
 class DataGenerator(keras.utils.Sequence):
@@ -35,6 +36,13 @@ class DataGenerator(keras.utils.Sequence):
             self.idx2attr[i] = attr_name
 
         lines = lines[2:]
+
+
+        self.list_IDs = 0
+        if self.mode != 'train':
+            self.list_IDs = 2000
+
+
         random.seed(1234)
         random.shuffle(lines)
         for i, line in enumerate(lines):
@@ -52,20 +60,24 @@ class DataGenerator(keras.utils.Sequence):
                 self.test_dataset.append([filename, label])
             else:
                 self.train_dataset.append([filename, label])
+                if self.mode == 'train':
+                    self.list_IDs += 1
 
     def __len__(self):
         'Denotes the number of batches per epoch'
-        return int(np.floor(len(self.list_IDs) / self.batch_size))
+        return int(np.floor(self.list_IDs / self.batch_size))
 
-    def preprocess(self, image):
+    def preprocess_im(self, image):
         width, height = image.size
-        if random.randint(2):
+        if random.randint(0,2):
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
 
-        image = image.crop((int(width/2.0 - crop_size/2.0),int(height/2.0 - crop_size/2.0),int(width/2.0 + crop_size/2.0),int(height/2.0 + crop_size/2.0)))
-        image = image.resize((image_size, image_size))
+        image = image.crop((int(width/2.0 - self.crop_size/2.0),int(height/2.0 - self.crop_size/2.0),int(width/2.0 + self.crop_size/2.0),int(height/2.0 + self.crop_size/2.0)))
+        image = image.resize((self.image_size, self.image_size))
 
         img = np.asarray(image)
+        img = img.astype(np.float32)
+        img = img / 255
 
         #normalize:
         img = (img - 0.5) / 0.5 #normalize to [-1,1]
@@ -77,7 +89,7 @@ class DataGenerator(keras.utils.Sequence):
         dataset = self.train_dataset if self.mode == 'train' else self.test_dataset
         filename, label = dataset[index]
         image = Image.open(os.path.join(self.image_dir, filename))
-        return self.preprocess(image), np.asarray(label)
+        return self.preprocess_im(image), np.asarray(label)
 
     def __getitem__(self, index):
         'Generate one batch of data'
@@ -87,11 +99,13 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         X, y = self.__data_generation(indexes)
 
+        self.on_epoch_end()
+
         return X, y
 
     def on_epoch_end(self):
         'Updates indexes after each epoch'
-        self.indexes = np.arange(len(self.list_IDs))
+        self.indexes = np.arange(self.list_IDs-1)
         np.random.shuffle(self.indexes)
 
     def __data_generation(self, indexes):
@@ -105,9 +119,9 @@ class DataGenerator(keras.utils.Sequence):
             # Store sample and class
             X[i,], y[i,] = self.__getsingleitem__(ID)
 
-        return X, keras.utils.to_categorical(y, num_classes=self.n_classes)
+        return X, y
 
-def get_generator(image_dir = "data/celeba/images/", attr_path = "data/celeba/images/", selected_attrs, crop_size=178, image_size=128, 
+def get_generator(image_dir, attr_path, selected_attrs, crop_size=178, image_size=128, 
                batch_size=16, mode='train'):
 
     generator = DataGenerator(image_dir, attr_path, selected_attrs,  mode, crop_size, image_size, batch_size)

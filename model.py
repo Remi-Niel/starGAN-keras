@@ -1,11 +1,11 @@
 import tensorflow
 import keras
 from keras.layers import Activation, Dense, Input, Lambda, LeakyReLU
-from keras.layers import Conv2D, Flatten
+from keras.layers import Conv2D, Flatten, AveragePooling2D
 from keras.layers import Reshape, Conv2DTranspose
 from keras.models import Model
-import nump as np
-import instancenormalization
+import numpy as np
+from instancenormalization import InstanceNormalization
 
 def ConvBlock(x, n_filters, kernel_size, strides):
     x = Conv2D(filters = n_filters, kernel_size = kernel_size, strides = strides, padding = 'same', use_bias = False)(x)
@@ -13,8 +13,8 @@ def ConvBlock(x, n_filters, kernel_size, strides):
     x = Activation('relu')(x)
     return x
 
-def ConvTransposeBlock(x,n_filters)
-    x = Conv2DTranspose(filters = n_filters, kernel_size = 4, strides = 2, padding = 'same', use_bias = False)
+def ConvTransposeBlock(x,n_filters):
+    x = Conv2DTranspose(filters = n_filters, kernel_size = 4, strides = 2, padding = 'same', use_bias = False)(x)
     x = InstanceNormalization()(x)
     x = Activation('relu')(x)
     return x
@@ -68,6 +68,11 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     kernel_size = int(im_size / (2 ** repeat_num))
 
     out_src = Conv2D(1, kernel_size = 3, strides = 1, padding = 'same', use_bias = False)(x)
+    out_src = AveragePooling2D(kernel_size)(out_src)
+    out_src = Flatten()(out_src)
     out_cls = Conv2D(n_labels, kernel_size = kernel_size, padding = 'valid', use_bias = False)(x)
+    out_cls = Flatten()(out_cls)
 
     discriminator = Model(input_img, [out_src, out_cls], name = 'discriminator')
+    
+    return discriminator
