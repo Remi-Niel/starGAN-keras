@@ -1,5 +1,5 @@
 from model import get_generator, get_discriminator
-import tensorflow
+import tensorflow as tf
 import keras
 from keras.models import Model
 from keras.layers import Input
@@ -8,7 +8,9 @@ import os
 import time
 import random
 import datetime
-
+import matplotlib.pyplot as plt
+from io import BytesIO
+from tqdm import trange
 
 class Solver(object):
 
@@ -24,8 +26,14 @@ class Solver(object):
         self.lamda_rec = config.lambda_rec
         self.lamda_gp = config.lambda_gp
 
+        self.g_lr = config.g_lr
+        self.d_lr = config.d_lr
+        self.beta_1 = config.beta1
+        self.beta_2 = config.beta2 
+
         self.batch_size = config.batch_size
         self.num_iters = config.num_iters
+        self.num_iters_decay = config.num_iters_decay
         self.n_critic = config.n_critic
         self.resume_iters = config.resume_iters
         self.selected_attrs = config.selected_attrs
@@ -49,8 +57,8 @@ class Solver(object):
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, self.image_size)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, self.image_size)
 
-        self.d_optimizer = keras.optimizers.Adam(lr = 0.0001, beta_1 = 0.5)
-        self.g_optimizer = keras.optimizers.Adam(lr = 0.0001, beta_1 = 0.5)
+        self.d_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay)
+        self.g_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay)
 
         print(self.D)
         self.D.compile(loss=["binary_crossentropy", "binary_crossentropy"], loss_weights = [1, self.lambda_cls], optimizer= self.d_optimizer)
@@ -102,7 +110,7 @@ class Solver(object):
 
 
     def train(self):
-        self.writer = tensorflow.summary.FileWriter(self.log_dir)
+        self.writer = tf.summary.FileWriter(self.log_dir)
 
         callbacks = [keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False),
                      keras.callbacks.ModelCheckpoint(self.model_save_dir + "weights.{epoch:03d}.hdf5", verbose = 1, period = 5)]
@@ -113,53 +121,57 @@ class Solver(object):
         test_imgs = np.tile(test_imgs, (5,1,1,1))
         c_fixed = np.asarray(self.create_labels(label_test, self.n_labels, self.data_loader, self.selected_attrs))
         c_fixed = np.concatenate(c_fixed, axis = 0)
-        print c_fixed.shape
-        print test_imgs.shape
-        labels_fixed = c_fixed.reshape((80,1,1,5))
+        labels_fixed = c_fixed.reshape((5 * self.batch_size, 1, 1, 5))
         test_imgs_concatted = np.concatenate((test_imgs, np.tile(labels_fixed, (1,self.image_size, self.image_size,1))), axis=3)
 
-        start_iters = 0;
-
-        for i in range(0, self.num_iters):
-
-            try:
-                x_real, label_org = next(data_iter)
-            except:
-                data_iter = iter(data_iter)
-                x_real, label_org = next(data_iter)
-
-            label_trg = label_org[range(label_org.shape[0])[::-1]]
-
-            c_org = label_org.copy()
-            c_trg = label_trg.copy()
-
-            labels_trg = c_trg.reshape((16,1,1,5))
-            x_concatted = np.concatenate((x_real, np.tile(labels_trg, (1,self.image_size, self.image_size,1))), axis=3)
-
-
-            x_fake = self.G.predict(x_concatted)
-
-
-            fake = np.zeros(self.batch_size)
-            real = np.ones(self.batch_size)
-
-            d_loss_r = self.D.train_on_batch(x_real, [real, c_org])
-            d_loss_f = self.D.train_on_batch(x_fake, [fake, c_trg])
-            g_loss = self.combined.train_on_batch(x_concatted, [x_real, fake, c_trg])
-
-            print "D_real loss: " + str((d_loss_r[1]+d_loss_f[1])/2)
-            print "D_class loss: " + str((d_loss_r[2]+d_loss_r[2])/2)
-            # print g_loss
-
+        for epoch in trange(0,self.num_iters//self.log_step):
             with keras.backend.get_session().as_default():
-                # print ("training: " + str(d_loss)+ " " + str(g_loss))
-                if i%100==0:
-                    outcome = self.G.predict(test_imgs_concatted)
-                    orig_test = tensorflow.summary.image("original", self.denorm(test_imgs[0].reshape((-1,128,128,3))), 3)
-                    summary_test = tensorflow.summary.image("improved", self.denorm(outcome[0].reshape((-1,128,128,3))), 3)
-                    print(summary_test)
-                    self.writer.add_summary(orig_test.eval(),0)
-                    self.writer.add_summary(summary_test.eval(),0)
+
+                outcome = self.G.predict(test_imgs_concatted)
+                s = BytesIO()
+                plt.imsave(s, self.denorm(outcome[epoch % 80].reshape((128,128,3))))
+                out_sum = tf.Summary.Image(encoded_image_string = s.getvalue())
+
+                s = BytesIO()
+                plt.imsave(s, self.denorm(test_imgs[epoch % 80].reshape((128,128,3))))
+                orig_sum = tf.Summary.Image(encoded_image_string = s.getvalue())
+           
+                
+                summary = tf.Summary(value=[tf.Summary.Value(tag = "in", image = orig_sum), 
+                                            tf.Summary.Value(tag = "Out", image = out_sum)])
+                self.writer.add_summary(summary, epoch)
+
+
+            d_loss_r = 0
+            d_loss_f = 0
+            for i in trange(0, self.log_step):
+
+                try:
+                    x_real, label_org = next(data_iter)
+                except:
+                    data_iter = iter(data_iter)
+                    x_real, label_org = next(data_iter)
+
+                label_trg = label_org[range(label_org.shape[0])[::-1]]
+
+                c_org = label_org.copy()
+                c_trg = label_trg.copy()
+
+                labels_trg = c_trg.reshape((self.batch_size,1,1,5))
+                x_concatted = np.concatenate((x_real, np.tile(labels_trg, (1,self.image_size, self.image_size,1))), axis=3)
+
+
+                x_fake = self.G.predict(x_concatted)
+
+
+                fake = np.zeros(self.batch_size)
+                real = np.ones(self.batch_size)
+
+                d_loss_r = self.D.train_on_batch(x_real, [real, c_org])
+                d_loss_f = self.D.train_on_batch(x_fake, [fake, c_trg])
+                g_loss = self.combined.train_on_batch(x_concatted, [x_real, fake, c_trg])
+
+            
 
 
 
