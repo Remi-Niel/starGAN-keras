@@ -149,7 +149,7 @@ class Solver(object):
                 try:
                     x_real, label_org = next(data_iter)
                 except:
-                    data_iter = iter(data_iter)
+                    data_iter = iter(self.data_loader)
                     x_real, label_org = next(data_iter)
 
                 label_trg = label_org[range(label_org.shape[0])[::-1]]
