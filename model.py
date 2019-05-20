@@ -1,7 +1,7 @@
 import tensorflow
 import keras
 from keras.layers import Activation, Dense, Input, Lambda, LeakyReLU
-from keras.layers import Conv2D, Flatten, AveragePooling2D
+from keras.layers import Conv2D, Flatten, AveragePooling2D, Add
 from keras.layers import Reshape, Conv2DTranspose
 from keras.models import Model
 import numpy as np
@@ -20,10 +20,10 @@ def ConvTransposeBlock(x,n_filters):
     return x
 
 def ResidualBlock(x, n_filters):
-    x = ConvBlock(x, n_filters = n_filters, kernel_size = 3, strides = 1)
-    x = Conv2D(filters = n_filters, kernel_size = 3, strides = 1, padding = 'same', use_bias = False)(x)
-    x = InstanceNormalization()(x)
-    return x
+    y = ConvBlock(x, n_filters = n_filters, kernel_size = 3, strides = 1)
+    y = Conv2D(filters = n_filters, kernel_size = 3, strides = 1, padding = 'same', use_bias = False)(y)
+    y = InstanceNormalization()(y)
+    return Add()([x,y])
 
 # Create and return generator model
 def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 128):
@@ -74,5 +74,5 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     out_cls = Flatten()(out_cls)
 
     discriminator = Model(input_img, [out_src, out_cls], name = 'discriminator')
-    
+
     return discriminator
