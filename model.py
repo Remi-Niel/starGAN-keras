@@ -68,8 +68,8 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     kernel_size = int(im_size / (2 ** repeat_num))
 
     out_src = Conv2D(1, kernel_size = 3, strides = 1, padding = 'same', use_bias = False)(x)
-    out_src = AveragePooling2D(kernel_size)(out_src)
     out_src = Flatten()(out_src)
+    
     out_cls = Conv2D(n_labels, kernel_size = kernel_size, padding = 'valid', use_bias = False)(x)
     out_cls = Flatten()(out_cls)
 

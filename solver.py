@@ -57,6 +57,8 @@ class Solver(object):
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, self.image_size)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, self.image_size)
 
+        self.D.summary()
+
         self.d_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay/5)
         self.g_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay/5)
 
@@ -122,6 +124,7 @@ class Solver(object):
         c_fixed = np.asarray(self.create_labels(label_test, self.n_labels, self.data_loader, self.selected_attrs))
         c_fixed = np.concatenate(c_fixed, axis = 0)
         labels_fixed = c_fixed.reshape((5 * self.batch_size, 1, 1, 5))
+        label_test = np.tile(label_test, (5,1))
         test_imgs_concatted = np.concatenate((test_imgs, np.tile(labels_fixed, (1,self.image_size, self.image_size,1))), axis=3)
 
         for epoch in trange(0,self.num_iters//self.log_step//5):
@@ -129,16 +132,23 @@ class Solver(object):
 
                 outcome = self.G.predict(test_imgs_concatted)
                 s = BytesIO()
-                plt.imsave(s, self.denorm(outcome[epoch % 80].reshape((128,128,3))))
-                out_sum = tf.Summary.Image(encoded_image_string = s.getvalue())
 
+                left = self.denorm(test_imgs[epoch%80].reshape((128,128,3)))
+                right = self.denorm(outcome[epoch%80].reshape((128,128,3)))
+
+                total = np.concatenate((left,right),axis = 1)
+                print(total.shape)
+                plt.imsave(s, total)
+                out = tf.Summary.Image(encoded_image_string = s.getvalue())
+                print(label_test.shape)
+                print(labels_fixed.shape)
+                labels = np.concatenate((label_test[epoch%80].reshape((1,self.n_labels)),labels_fixed[epoch%80].reshape((1,self.n_labels))))
                 s = BytesIO()
-                plt.imsave(s, self.denorm(test_imgs[epoch % 80].reshape((128,128,3))))
-                orig_sum = tf.Summary.Image(encoded_image_string = s.getvalue())
-           
-                
-                summary = tf.Summary(value=[tf.Summary.Value(tag = "in", image = orig_sum), 
-                                            tf.Summary.Value(tag = "Out", image = out_sum)])
+                plt.imsave(s, labels)
+                labels = tf.Summary.Image(encoded_image_string = s.getvalue())
+
+                summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out", image = out),
+                                            tf.Summary.Value(tag = "Labels", image = labels)])
                 self.writer.add_summary(summary, epoch)
 
 
@@ -170,9 +180,9 @@ class Solver(object):
                     concatted_labels = np.concatenate((c_trg,c_org))
                     concatted_imgs = np.concatenate((x_fake, x_real))
 
-                    d_loss_r = self.D.train_on_batch(concatted_imgs, [concatted_bool, concatted_labels])
+                    d_loss_r = self.D.train_on_batch(concatted_imgs, [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels])
 
-                g_loss = self.combined.train_on_batch(x_concatted, [x_real, fake, c_trg])
+                g_loss = self.combined.train_on_batch(x_concatted, [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
 
             
 
