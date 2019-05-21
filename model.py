@@ -61,9 +61,9 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
 
     curr_filters = n_filters
     for i in range(1, repeat_num):
-        x = Conv2D(filters = curr_filters * 2, kernel_size = 4, strides = 2, padding = 'same')(x)
-        x = LeakyReLU(alpha = 0.01)(x)
         curr_filters *= 2
+        x = Conv2D(filters = curr_filters, kernel_size = 4, strides = 2, padding = 'same')(x)
+        x = LeakyReLU(alpha = 0.01)(x)
 
     kernel_size = int(im_size / (2 ** repeat_num))
 

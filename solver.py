@@ -57,8 +57,8 @@ class Solver(object):
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, self.image_size)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, self.image_size)
 
-        self.d_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay)
-        self.g_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay)
+        self.d_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay/5)
+        self.g_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay/5)
 
         print(self.D)
         self.D.compile(loss=["binary_crossentropy", "binary_crossentropy"], loss_weights = [1, self.lambda_cls], optimizer= self.d_optimizer)
@@ -124,7 +124,7 @@ class Solver(object):
         labels_fixed = c_fixed.reshape((5 * self.batch_size, 1, 1, 5))
         test_imgs_concatted = np.concatenate((test_imgs, np.tile(labels_fixed, (1,self.image_size, self.image_size,1))), axis=3)
 
-        for epoch in trange(0,self.num_iters//self.log_step):
+        for epoch in trange(0,self.num_iters//self.log_step//5):
             with keras.backend.get_session().as_default():
 
                 outcome = self.G.predict(test_imgs_concatted)
@@ -145,30 +145,33 @@ class Solver(object):
             d_loss_r = 0
             d_loss_f = 0
             for i in trange(0, self.log_step):
+                for j in range(0,5):
+                    try:
+                        x_real, label_org = next(data_iter)
+                    except:
+                        data_iter = iter(self.data_loader)
+                        x_real, label_org = next(data_iter)
 
-                try:
-                    x_real, label_org = next(data_iter)
-                except:
-                    data_iter = iter(self.data_loader)
-                    x_real, label_org = next(data_iter)
+                    label_trg = label_org[np.random.permutation(label_org.shape[0])]
 
-                label_trg = label_org[range(label_org.shape[0])[::-1]]
+                    c_org = label_org.copy()
+                    c_trg = label_trg.copy()
 
-                c_org = label_org.copy()
-                c_trg = label_trg.copy()
-
-                labels_trg = c_trg.reshape((self.batch_size,1,1,5))
-                x_concatted = np.concatenate((x_real, np.tile(labels_trg, (1,self.image_size, self.image_size,1))), axis=3)
-
-
-                x_fake = self.G.predict(x_concatted)
+                    labels_trg = c_trg.reshape((self.batch_size,1,1,5))
+                    x_concatted = np.concatenate((x_real, np.tile(labels_trg, (1,self.image_size, self.image_size,1))), axis=3)
 
 
-                fake = np.zeros(self.batch_size)
-                real = np.ones(self.batch_size)
+                    x_fake = self.G.predict(x_concatted)
 
-                d_loss_r = self.D.train_on_batch(x_real, [real, c_org])
-                d_loss_f = self.D.train_on_batch(x_fake, [fake, c_trg])
+
+                    fake = np.zeros(self.batch_size)
+                    real = np.ones(self.batch_size)
+                    concatted_bool = np.concatenate((fake,real))
+                    concatted_labels = np.concatenate((c_trg,c_org))
+                    concatted_imgs = np.concatenate((x_fake, x_real))
+
+                    d_loss_r = self.D.train_on_batch(concatted_imgs, [concatted_bool, concatted_labels])
+
                 g_loss = self.combined.train_on_batch(x_concatted, [x_real, fake, c_trg])
 
             
