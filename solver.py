@@ -129,13 +129,14 @@ class Solver(object):
 
         shape = (self.image_size,self.image_size,3)
         gen_input, interpolation = Input(shape), Input(shape)
-        norm = GradNorm()([self.D(interpolation)[0], interpolation])
+        # norm = GradNorm()([self.D(interpolation)[0], interpolation])
         output_D = self.D(gen_input)
-        self.dis2batch = Model([gen_input, interpolation], output_D + [norm])
+        # self.dis2batch = Model([gen_input, interpolation], output_D + [norm])
+        self.dis2batch = Model([gen_input], output_D)
 
         self.D.trainable = True
 
-        self.dis2batch.compile(loss=[self.wasserstein_loss, "binary_crossentropy", 'mse'], loss_weights = [1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
+        self.dis2batch.compile(loss=[self.wasserstein_loss, "binary_crossentropy"], loss_weights = [1, self.lambda_cls], optimizer= self.d_optimizer)
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
@@ -252,9 +253,9 @@ class Solver(object):
                                                                         )
                                                         )
 
-                    epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
-                    interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
-                    d_loss_r = self.dis2batch.train_on_batch([concatted_imgs, interpolation], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels, np.ones(self.batch_size * 2)])
+                    # epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
+                    # interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
+                    d_loss_r = self.dis2batch.train_on_batch([concatted_imgs], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels])
                     print(d_loss_r)
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
