@@ -3,7 +3,7 @@ import tensorflow as tf
 import keras
 from keras.engine.topology import Layer
 from keras.models import Model
-from keras.layers import Input
+from keras.layers import Input Concatenate
 import numpy as np
 import os
 import time
@@ -111,12 +111,19 @@ class Solver(object):
 
         self.D.trainable = False
 
-        input_img = Input(shape = (self.image_size, self.image_size, 3 + self.n_labels))
+        input_img = Input(shape = (self.image_size, self.image_size, 3))
+        input_orig_labels = Input(shape = (self.image_size, self.image_size, self.n_labels))
+        input_target_labels = Input(shape = (self.image_size, self.image_size, self.n_labels))
 
-        reconstr_img = self.G(input_img)
-        output_D     = self.D(reconstr_img)
+        concatted_input = Concatenate(axis=2)([input_img, input_target_labels])
 
-        self.combined = Model(inputs = [input_img], outputs = [reconstr_img] + output_D)
+        fake_img = self.G(concatted_input)
+        concatted_fake_img = Concatenate(axis=2)([fake_img,input_orig_labels])
+        reconstr_img = self.G(concatted_fake_img)
+
+        output_D     = self.D(fake_img)
+
+        self.combined = Model(inputs = [input_img, input_orig_labels, input_target_labels], outputs = [reconstr_img] + output_D)
 
         self.combined.compile(loss = ["mae", self.wasserstein_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, -1, self.lambda_cls], optimizer = self.g_optimizer)
 
@@ -248,7 +255,16 @@ class Solver(object):
 
                     d_loss_r = self.dis2batch.train_on_batch([concatted_imgs, interpolation], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels, np.ones(self.batch_size * 2)])
 
-                g_loss = self.combined.train_on_batch(x_concatted, [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
+                
+                tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
+                tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
+                g_loss = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
+
+
+
+
+
+
 
             
 
