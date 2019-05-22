@@ -136,7 +136,7 @@ class Solver(object):
 
         self.D.trainable = True
 
-        self.dis2batch.compile(loss=[self.wasserstein_loss, "binary_crossentropy"], loss_weights = [1, self.lambda_cls], optimizer= self.d_optimizer)
+        self.dis2batch.compile(loss=["binary_crossentropy", "binary_crossentropy"], loss_weights = [1, self.lambda_cls], optimizer= self.d_optimizer)
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
