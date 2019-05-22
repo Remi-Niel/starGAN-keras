@@ -138,10 +138,10 @@ class Solver(object):
         self.combined.compile(loss = ["mae", "binary_crossentropy", "binary_crossentropy"], loss_weights = [self.lambda_rec, -1, self.lambda_cls], optimizer = self.g_optimizer)
 
         shape = (self.image_size,self.image_size,3)
-        gen_input, interpolation = Input(shape), Input(shape), Input(shape)
+        gen_input, interpolation = Input(shape), Input(shape)
         norm = GradNorm()([self.D(interpolation)[0], interpolation])
         output_D = self.D(gen_input)
-        self.dis2batch = Model([gen_input, real_input, interpolation], output_D + [norm])
+        self.dis2batch = Model([gen_input, interpolation], output_D + [norm])
         # self.dis2batch = Model([gen_input], output_D)
 
         self.D.trainable = True
@@ -272,7 +272,7 @@ class Solver(object):
 
                     epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
                     interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
-                    d_logs = self.dis2batch.train_on_batch([concatted_fake_imgs, interpolation], [concatted_labels, np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), np.ones(self.batch_size * 2)])
+                    d_logs = self.dis2batch.train_on_batch([concatted_fake_imgs, interpolation], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)),concatted_labels, np.ones(self.batch_size * 2)])
                     write_log(callback, dis_names, d_logs[1:4], batch_id)
                     batch_id += 1
 
