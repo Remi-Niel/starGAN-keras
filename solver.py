@@ -15,6 +15,12 @@ from tqdm import trange
 from keras.layers.merge import _Merge
 import keras.backend as K
 
+def named_logs(model, logs):
+  result = {}
+  for l in zip(model.metrics_names, logs):
+    result[l[0]] = l[1]
+  return result
+
 class GradNorm(Layer):
     def __init__(self, **kwargs):
         super(GradNorm, self).__init__(**kwargs)
@@ -175,6 +181,24 @@ class Solver(object):
     def train(self):
         self.writer = tf.summary.FileWriter(self.log_dir)
 
+        tensorboard_gen = keras.callbacks.TensorBoard(
+		  log_dir=self.log_dir,
+		  histogram_freq=0,
+		  batch_size=batch_size,
+		  write_graph=True,
+		  write_grads=True
+		)
+		tensorboard.set_model(self.combined)
+
+        tensorboard_dis = keras.callbacks.TensorBoard(
+		  log_dir=self.log_dir,
+		  histogram_freq=0,
+		  batch_size=batch_size,
+		  write_graph=True,
+		  write_grads=True
+		)
+		tensorboard.set_model(self.dis2batch)
+
         callbacks = [keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False),
                      keras.callbacks.ModelCheckpoint(self.model_save_dir + "weights.{epoch:03d}.hdf5", verbose = 1, period = 5)]
 
@@ -188,6 +212,8 @@ class Solver(object):
         label_test = np.tile(label_test, (5,1))
         test_imgs_concatted = np.concatenate((test_imgs, np.tile(labels_fixed, (1,self.image_size, self.image_size,1))), axis=3)
 
+
+        batch_id = 0
         for epoch in trange(0,self.num_iters//self.log_step//5):
             with keras.backend.get_session().as_default():
 
@@ -255,11 +281,14 @@ class Solver(object):
 
                     # epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
                     # interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
-                    d_loss_r = self.dis2batch.train_on_batch([concatted_imgs], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels])
-                    print(d_loss_r)
+                    d_logs = self.dis2batch.train_on_batch([concatted_imgs], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels])
+                    tensorboard_dis.on_train_end(batch_id, named_logs(self.dis2batch,d_logs))
+                    batch_id += 1
+
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
-                g_loss = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
+                g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
+                tensorboard_gen.on_train_end(batch_id, named_logs(self.combined,g_logs))
 
 
 
