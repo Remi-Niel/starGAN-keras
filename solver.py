@@ -3,7 +3,7 @@ import tensorflow as tf
 import keras
 from keras.engine.topology import Layer
 from keras.models import Model
-from keras.layers import Input Concatenate
+from keras.layers import Input, Concatenate
 import numpy as np
 import os
 import time
@@ -115,10 +115,10 @@ class Solver(object):
         input_orig_labels = Input(shape = (self.image_size, self.image_size, self.n_labels))
         input_target_labels = Input(shape = (self.image_size, self.image_size, self.n_labels))
 
-        concatted_input = Concatenate(axis=2)([input_img, input_target_labels])
+        concatted_input = Concatenate(axis=3)([input_img, input_target_labels])
 
         fake_img = self.G(concatted_input)
-        concatted_fake_img = Concatenate(axis=2)([fake_img,input_orig_labels])
+        concatted_fake_img = Concatenate(axis=3)([fake_img,input_orig_labels])
         reconstr_img = self.G(concatted_fake_img)
 
         output_D     = self.D(fake_img)
