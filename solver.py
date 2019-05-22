@@ -184,20 +184,20 @@ class Solver(object):
         tensorboard_gen = keras.callbacks.TensorBoard(
           log_dir=self.log_dir,
           histogram_freq=0,
-          batch_size=batch_size,
+          batch_size=self.batch_size,
           write_graph=True,
           write_grads=True
         )
-        tensorboard.set_model(self.combined)
+        tensorboard_gen.set_model(self.combined)
 
         tensorboard_dis = keras.callbacks.TensorBoard(
           log_dir=self.log_dir,
           histogram_freq=0,
-          batch_size=batch_size,
+          batch_size=self.batch_size,
           write_graph=True,
           write_grads=True
         )
-        tensorboard.set_model(self.dis2batch)
+        tensorboard_dis.set_model(self.dis2batch)
 
         callbacks = [keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False),
                      keras.callbacks.ModelCheckpoint(self.model_save_dir + "weights.{epoch:03d}.hdf5", verbose = 1, period = 5)]
@@ -282,13 +282,13 @@ class Solver(object):
                     # epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
                     # interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
                     d_logs = self.dis2batch.train_on_batch([concatted_imgs], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels])
-                    tensorboard_dis.on_train_end(batch_id, named_logs(self.dis2batch,d_logs))
+                    tensorboard_dis.on_epoch_end(batch_id, named_logs(self.dis2batch,d_logs))
                     batch_id += 1
 
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
-                tensorboard_gen.on_train_end(batch_id, named_logs(self.combined,g_logs))
+                tensorboard_gen.on_epoch_end(batch_id, named_logs(self.combined,g_logs))
 
 
 
