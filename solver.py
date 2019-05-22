@@ -190,11 +190,8 @@ class Solver(object):
                 right = self.denorm(outcome[epoch%80].reshape((128,128,3)))
 
                 total = np.concatenate((left,right),axis = 1)
-                print(total.shape)
                 plt.imsave(s, total)
                 out = tf.Summary.Image(encoded_image_string = s.getvalue())
-                print(label_test.shape)
-                print(labels_fixed.shape)
                 labels = np.concatenate((label_test[epoch%80].reshape((1,self.n_labels)),labels_fixed[epoch%80].reshape((1,self.n_labels))))
                 s = BytesIO()
                 plt.imsave(s, labels)
