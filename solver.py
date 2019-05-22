@@ -190,7 +190,7 @@ class Solver(object):
 
         callback = keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False)
         callback.set_model(self.combined)
-        dis_names = ['Discriminator Classification loss', 'Discriminator Adversarial loss', 'Gradient Penalty']
+        dis_names = ['Discriminator Adversarial loss', 'Discriminator Classification loss', 'Gradient Penalty']
         gen_names = ['Cycle loss', 'Generator Adversarial loss', 'Generator Classification loss']
 
         data_iter = iter(self.data_loader)
