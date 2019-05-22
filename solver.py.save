@@ -106,8 +106,8 @@ class Solver(object):
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, self.image_size)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, self.image_size)
 
-        self.d_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
-        self.g_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2)
+        self.d_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay/5)
+        self.g_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2, decay = 1.0/self.num_iters_decay/5)
 
         self.D.trainable = False
 
@@ -197,11 +197,13 @@ class Solver(object):
 
                 left = self.denorm(test_imgs[epoch%80].reshape((128,128,3)))
                 right = self.denorm(outcome[epoch%80].reshape((128,128,3)))
-                total = np.concatenate((left,right),axis = 1)
-
+                total = np.concatenate((left,right),axis = 1
+<<<<<<< HEAD
+=======
                 right = self.denorm(cycled[epoch%80].reshape((128,128,3)))
                 total = np.concatenate((total,right), axis = 1)
 
+>>>>>>> ec99cea941e3b1227b9fff36aebb218766277d9b
                 plt.imsave(s, total)
                 out = tf.Summary.Image(encoded_image_string = s.getvalue())
                 labels = np.concatenate((label_test[epoch%80].reshape((1,self.n_labels)),labels_fixed[epoch%80].reshape((1,self.n_labels))))
@@ -209,7 +211,7 @@ class Solver(object):
                 plt.imsave(s, labels)
                 labels = tf.Summary.Image(encoded_image_string = s.getvalue())
 
-                summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out),
+                summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out", image = out),
                                             tf.Summary.Value(tag = "Labels", image = labels)])
                 self.writer.add_summary(summary, epoch)
 
@@ -224,7 +226,7 @@ class Solver(object):
                         data_iter = iter(self.data_loader)
                         x_real, label_org = next(data_iter)
 
-                    label_trg = np.flip(label_org, axis=0)
+                    label_trg = label_org[np.random.permutation(label_org.shape[0])]
 
                     c_org = label_org.copy()
                     c_trg = label_trg.copy()
@@ -254,8 +256,10 @@ class Solver(object):
 
                     epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
                     interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
+
                     d_loss_r = self.dis2batch.train_on_batch([concatted_imgs, interpolation], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels, np.ones(self.batch_size * 2)])
-                    print(d_loss_r)
+
+                
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 g_loss = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
