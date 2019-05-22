@@ -15,11 +15,28 @@ from tqdm import trange
 from keras.layers.merge import _Merge
 import keras.backend as K
 
-def named_logs(model, logs):
-  result = {}
-  for l in zip(model.metrics_names, logs):
-    result[l[0]] = l[1]
-  return result
+def write_log(callback, names, logs, batch_no):
+    for name, value in zip(names, logs):
+        summary = tf.Summary()
+        summary_value = summary.value.add()
+        summary_value.simple_value = value
+        summary_value.tag = name
+        callback.writer.add_summary(summary, batch_no)
+        callback.writer.flush()
+
+
+class Subtract(_Merge):
+    def _merge_function(self, inputs):
+        output = inputs[0]
+        for i in range(1, len(inputs)):
+            output = output-inputs[i]
+        return output
+
+def mean_loss(y_true, y_pred):
+    return K.mean(y_pred)
+
+def multiple_loss(y_true, y_pred):
+    return K.mean(y_true*y_pred)
 
 class GradNorm(Layer):
     def __init__(self, **kwargs):
@@ -94,19 +111,6 @@ class Solver(object):
         less than 0."""
         return keras.backend.mean(y_true * y_pred)
 
-    def multiple_loss(y_true, y_pred):
-        return K.mean(y_true*y_pred)
-
-    def mean_loss(y_true, y_pred):
-        return K.mean(y_pred)
-
-    class Subtract(_Merge):
-        def _merge_function(self, inputs):
-            output = inputs[0]
-            for i in range(1, len(inputs)):
-                output = output-inputs[i]
-            return output
-
     #http://shaofanlai.com/post/10
     def build_model(self):
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, self.image_size)
@@ -131,18 +135,19 @@ class Solver(object):
 
         self.combined = Model(inputs = [input_img, input_orig_labels, input_target_labels], outputs = [reconstr_img] + output_D)
 
-        self.combined.compile(loss = ["mae", self.wasserstein_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, -1, self.lambda_cls], optimizer = self.g_optimizer)
+        self.combined.compile(loss = ["mae", multiple_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, -1, self.lambda_cls], optimizer = self.g_optimizer)
 
         shape = (self.image_size,self.image_size,3)
-        gen_input, interpolation = Input(shape), Input(shape)
-        # norm = GradNorm()([self.D(interpolation)[0], interpolation])
+        gen_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
+        sub = Subtract()([self.D(gen_input)[0],self.D(real_input)[0]])
+        norm = GradNorm()([self.D(interpolation)[0], interpolation])
         output_D = self.D(gen_input)
-        # self.dis2batch = Model([gen_input, interpolation], output_D + [norm])
-        self.dis2batch = Model([gen_input], output_D)
+        self.dis2batch = Model([gen_input, real_input, interpolation], [output_D[1], sub, norm])
+        # self.dis2batch = Model([gen_input], output_D)
 
         self.D.trainable = True
 
-        self.dis2batch.compile(loss=["binary_crossentropy", "binary_crossentropy"], loss_weights = [1, self.lambda_cls], optimizer= self.d_optimizer)
+        self.dis2batch.compile(loss=["binary_crossentropy", mean_loss, 'mse'], loss_weights = [self.lambda_cls, 1, self.lambda_gp], optimizer= self.d_optimizer)
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
@@ -181,26 +186,13 @@ class Solver(object):
     def train(self):
         self.writer = tf.summary.FileWriter(self.log_dir)
 
-        tensorboard_gen = keras.callbacks.TensorBoard(
-          log_dir=self.log_dir,
-          histogram_freq=0,
-          batch_size=self.batch_size,
-          write_graph=True,
-          write_grads=True
-        )
-        tensorboard_gen.set_model(self.combined)
-
-        tensorboard_dis = keras.callbacks.TensorBoard(
-          log_dir=self.log_dir,
-          histogram_freq=0,
-          batch_size=self.batch_size,
-          write_graph=True,
-          write_grads=True
-        )
-        tensorboard_dis.set_model(self.dis2batch)
-
         callbacks = [keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False),
                      keras.callbacks.ModelCheckpoint(self.model_save_dir + "weights.{epoch:03d}.hdf5", verbose = 1, period = 5)]
+
+        callback = keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False)
+        callback.set_model(self.combined)
+        dis_names = ['Discriminator Classification loss', 'Discriminator Adversarial loss', 'Gradient Penalty']
+        gen_names = ['Cycle loss', 'Generator Adversarial loss', 'Generator Classification loss']
 
         data_iter = iter(self.data_loader)
         
@@ -263,7 +255,7 @@ class Solver(object):
                     x_fake = self.G.predict(x_concatted)
 
 
-                    fake = np.zeros(self.batch_size)
+                    fake = -1*np.ones(self.batch_size)
                     real = np.ones(self.batch_size)
                     concatted_bool = np.concatenate((fake,real))
                     concatted_labels = np.concatenate((c_trg,c_org))
@@ -279,16 +271,16 @@ class Solver(object):
                                                                         )
                                                         )
 
-                    # epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
-                    # interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
-                    d_logs = self.dis2batch.train_on_batch([concatted_imgs], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), concatted_labels])
-                    tensorboard_dis.on_epoch_end(batch_id, named_logs(self.dis2batch,d_logs))
+                    epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
+                    interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
+                    d_logs = self.dis2batch.train_on_batch([concatted_fake_imgs, concatted_imgs, interpolation], [concatted_labels, np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)), np.ones(self.batch_size * 2)])
+                    write_log(callback, dis_names, d_logs[1:4], batch_id)
                     batch_id += 1
 
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
-                tensorboard_gen.on_epoch_end(batch_id, named_logs(self.combined,g_logs))
+                write_log(callback, gen_names, g_logs[1:4], batch_id)
 
 
 
