@@ -35,8 +35,14 @@ class Subtract(_Merge):
 def mean_loss(y_true, y_pred):
     return K.mean(y_pred)
 
+def neg_mean_loss(y_true, y_pred):
+    return tf.math.scalar_mul(-1,K.mean(y_pred))
+
 def multiple_loss(y_true, y_pred):
     return K.mean(y_true*y_pred)
+
+def custom_bin(y_true, y_pred):
+    return tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true,logits=y_pred)
 
 class GradNorm(Layer):
     def __init__(self, **kwargs):
@@ -128,25 +134,26 @@ class Solver(object):
         concatted_input = Concatenate(axis=3)([input_img, input_target_labels])
 
         fake_img = self.G(concatted_input)
+        output_D     = self.D(fake_img)
         concatted_fake_img = Concatenate(axis=3)([fake_img,input_orig_labels])
         reconstr_img = self.G(concatted_fake_img)
 
-        output_D     = self.D(fake_img)
 
         self.combined = Model(inputs = [input_img, input_orig_labels, input_target_labels], outputs = [reconstr_img] + output_D)
 
-        self.combined.compile(loss = ["mae", "binary_crossentropy", "binary_crossentropy"], loss_weights = [self.lambda_rec, -1, self.lambda_cls], optimizer = self.g_optimizer)
+        self.combined.compile(loss = ["mae", neg_mean_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, .2, self.lambda_cls], optimizer = self.g_optimizer)
 
         shape = (self.image_size,self.image_size,3)
-        gen_input, interpolation = Input(shape), Input(shape)
+        fake_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
         norm = GradNorm()([self.D(interpolation)[0], interpolation])
-        output_D = self.D(gen_input)
-        self.dis2batch = Model([gen_input, interpolation], output_D + [norm])
+        fake_output_D = self.D(fake_input)
+        real_output_D = self.D(real_input)
+        self.dis2batch = Model([real_input, fake_input, interpolation], [fake_output_D[0]] + real_output_D + [norm])
         # self.dis2batch = Model([gen_input], output_D)
 
         self.D.trainable = True
 
-        self.dis2batch.compile(loss=["binary_crossentropy", "binary_crossentropy", 'mse'], loss_weights = [1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
+        self.dis2batch.compile(loss=[mean_loss, neg_mean_loss, "binary_crossentropy", 'mse'], loss_weights = [.1, .1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
@@ -183,11 +190,6 @@ class Solver(object):
 
 
     def train(self):
-        self.writer = tf.summary.FileWriter(self.log_dir)
-
-        callbacks = [keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False),
-                     keras.callbacks.ModelCheckpoint(self.model_save_dir + "weights.{epoch:03d}.hdf5", verbose = 1, period = 5)]
-
         callback = keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False)
         callback.set_model(self.combined)
         dis_names = ['Discriminator Adversarial loss', 'Discriminator Classification loss', 'Gradient Penalty']
@@ -229,7 +231,8 @@ class Solver(object):
 
                 summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out),
                                             tf.Summary.Value(tag = "Labels", image = labels)])
-                self.writer.add_summary(summary, epoch)
+                callback.writer.add_summary(summary, epoch)
+                callback.writer.flush()
 
 
             d_loss_r = 0
@@ -254,31 +257,18 @@ class Solver(object):
                     x_fake = self.G.predict(x_concatted)
 
 
-                    fake = np.zeros(self.batch_size)
+                    fake = 0*np.ones(self.batch_size)
                     real = np.ones(self.batch_size)
-                    concatted_bool = np.concatenate((fake,real))
-                    concatted_labels = np.concatenate((c_trg,c_org))
-                    concatted_imgs = np.concatenate((x_fake, x_real))
 
-                    concatted_labels_inv = np.flip(concatted_labels, axis = 0)
-
-                    concatted_fake_imgs = self.G.predict(np.concatenate((concatted_imgs, 
-                                                                            np.tile(concatted_labels_inv.reshape(self.batch_size*2,1,1,5), 
-                                                                                        (1,self.image_size, self.image_size,1))
-                                                                                    ), 
-                                                                        axis = 3
-                                                                        )
-                                                        )
-
-                    epsilon = np.random.uniform(0, 1, size = (2 * self.batch_size,1,1,1))
-                    interpolation = epsilon * concatted_imgs + (1-epsilon) * concatted_fake_imgs
-                    d_logs = self.dis2batch.train_on_batch([concatted_fake_imgs, interpolation], [np.tile(concatted_bool.reshape(self.batch_size*2,1),(1,4)),concatted_labels, np.ones(self.batch_size * 2)])
-                    write_log(callback, dis_names, d_logs[1:4], batch_id)
+                    epsilon = np.random.uniform(0, 1, size = (self.batch_size,1,1,1))
+                    interpolation = epsilon * x_real + (1-epsilon) * x_fake
+                    d_logs = self.dis2batch.train_on_batch([x_real, x_fake, interpolation], [real, fake, c_org, np.ones(self.batch_size)])
+                    write_log(callback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_id)
                     batch_id += 1
 
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
-                g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape(self.batch_size,1),(1,4)), c_trg])
+                g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, fake, c_trg])
                 write_log(callback, gen_names, g_logs[1:4], batch_id)
 
 
