@@ -69,7 +69,7 @@ class Solver(object):
         while(os.path.isdir(self.model_dir)):
             self.model_dir = self.model_save_dir + self.model_sub_dir + '_' + str(i)
             i += 1
-        os.mkdir(self.model_dir)
+        os.makedirs(self.model_dir)
 
     def __init__(self, celeba_loader, config):
         self.data_loader = celeba_loader
@@ -242,7 +242,22 @@ class Solver(object):
 
 
         batch_id = 0
-        for epoch in trange(0,self.num_iters//self.log_step//5):
+        total_steps = self.num_iters//self.log_step//self.n_critic
+
+        start = 0
+        if self.restore_epoch > 0:
+            start = epoch * self.model_save_step//self.log_step
+            batch_id = start * 5
+            
+        for epoch in trange(start,total_steps):
+
+            reduction = epoch - total_steps/2
+            if (reduction > 0):
+                ratio = 1.0 - (float(reduction) / (total_steps/2.0))
+                lr = self.g_lr * ratio
+                K.set_value(self.combined.optimizer.lr, lr)
+                lr = self.d_lr * ratio
+                K.set_value(self.DIS.optimizer.lr, lr)
             with keras.backend.get_session().as_default():
                 outcome = self.G.predict(test_imgs_concatted)
                 tmp = np.concatenate((outcome, np.tile(label_test.reshape((5*self.batch_size,1,1,5)),(1,self.image_size,self.image_size,1))),axis=3)
@@ -296,13 +311,13 @@ class Solver(object):
 
                     epsilon = np.random.uniform(0, 1, size = (self.batch_size,1,1,1))
                     interpolation = epsilon * x_real + (1-epsilon) * x_fake
-                    d_logs = self.DIS.train_on_batch([x_real, x_fake, interpolation], [real, fake, c_org, np.ones(self.batch_size)])
+                    d_logs = self.DIS.train_on_batch([x_real, x_fake, interpolation], [np.tile(real.reshape((self.batch_size,1)),(1,4)), np.tile(fake.reshape((self.batch_size,1)),(1,4)), c_org, np.ones(self.batch_size)])
                     write_log(callback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_id)
                     batch_id += 1
 
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
-                g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, fake, c_trg])
+                g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape((self.batch_size,1)),(1,4)), c_trg])
                 write_log(callback, gen_names, g_logs[1:4], batch_id)
 
             if (epoch > 0, epoch % (self.model_save_step // self.log_step) == 0):
