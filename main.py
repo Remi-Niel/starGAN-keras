@@ -74,7 +74,8 @@ if __name__ == '__main__':
     parser.add_argument('--celeba_image_dir', type=str, default='data/celeba/images')
     parser.add_argument('--attr_path', type=str, default='data/celeba/list_attr_celeba.txt')
     parser.add_argument('--log_dir', type=str, default='stargan/logs')
-    parser.add_argument('--model_save_dir', type=str, default='stargan/models')
+    parser.add_argument('--model_save_dir', type=str, default='best')
+    parser.add_argument('--restore_epoch', type=int, default=0)
     parser.add_argument('--sample_dir', type=str, default='stargan/samples')
     parser.add_argument('--result_dir', type=str, default='stargan/results')
 

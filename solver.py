@@ -14,6 +14,7 @@ from io import BytesIO
 from tqdm import trange
 from keras.layers.merge import _Merge
 import keras.backend as K
+import pickle
 
 def write_log(callback, names, logs, batch_no):
     for name, value in zip(names, logs):
@@ -63,6 +64,13 @@ class GradNorm(Layer):
 
 class Solver(object):
 
+    def isdir(self):
+        i=1;
+        while(os.path.isdir(self.model_dir)):
+            self.model_dir = self.model_save_dir + self.model_sub_dir + '_' + str(i)
+            i += 1
+        os.mkdir(self.model_dir)
+
     def __init__(self, celeba_loader, config):
         self.data_loader = celeba_loader
         self.n_labels = config.c_dim
@@ -93,6 +101,9 @@ class Solver(object):
         self.log_dir = "stargan/logs/"
         self.sample_dir = "stargan/samples/"
         self.model_save_dir = "stargan/models/"
+        self.model_sub_dir = config.model_save_dir
+        self.model_dir = self.model_save_dir + self.model_sub_dir
+        self.restore_epoch = config.restore_epoch
         self.result_dir = "stargan/results/"
 
         self.log_step = config.log_step
@@ -101,6 +112,15 @@ class Solver(object):
         self.lr_update_step = config.lr_update_step
 
         self.build_model()
+        if self.restore_epoch == 0:
+            self.isdir()
+            self.model_dir += '/'
+        else:
+            self.model_dir += '/'
+            self.combined.load_weights(self.model_dir + "combined_weights   " + str(self.restore_epoch) + ".h5")
+            self.restore_optimizer(self.combined, "combined")
+            self.restore_optimizer(self.DIS, "DIS")
+
 
     def wasserstein_loss(self, y_true, y_pred):
         """Calculates the Wasserstein loss for a sample batch.
@@ -141,19 +161,19 @@ class Solver(object):
 
         self.combined = Model(inputs = [input_img, input_orig_labels, input_target_labels], outputs = [reconstr_img] + output_D)
 
-        self.combined.compile(loss = ["mae", neg_mean_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, .2, self.lambda_cls], optimizer = self.g_optimizer)
+        self.combined.compile(loss = ["mae", neg_mean_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, 1, self.lambda_cls], optimizer = self.g_optimizer)
 
         shape = (self.image_size,self.image_size,3)
         fake_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
         norm = GradNorm()([self.D(interpolation)[0], interpolation])
         fake_output_D = self.D(fake_input)
         real_output_D = self.D(real_input)
-        self.dis2batch = Model([real_input, fake_input, interpolation], [fake_output_D[0]] + real_output_D + [norm])
-        # self.dis2batch = Model([gen_input], output_D)
+        self.DIS = Model([real_input, fake_input, interpolation], [fake_output_D[0]] + real_output_D + [norm])
+        # self.DIS = Model([gen_input], output_D)
 
         self.D.trainable = True
 
-        self.dis2batch.compile(loss=[mean_loss, neg_mean_loss, "binary_crossentropy", 'mse'], loss_weights = [.1, .1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
+        self.DIS.compile(loss=[mean_loss, neg_mean_loss, "binary_crossentropy", 'mse'], loss_weights = [1, 1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
@@ -188,6 +208,21 @@ class Solver(object):
         out = (x + 1) / 2
         return np.clip(out,0, 1)
 
+    def store_optimizer(self, model, name):
+        symbolic_weights = getattr(model.optimizer, 'weights')
+        weight_values = K.batch_get_value(symbolic_weights)
+        with open(self.model_dir + name + str(self.restore_epoch)+ "_optimizer.h5",'wb') as f:
+            pickle.dump(weight_values, f)
+            
+
+    def restore_optimizer(self, model, name):
+        model._make_train_function()
+        with open(self.model_dir + name + str(self.restore_epoch)+ "_optimizer.h5",'rb') as f:
+            weight_values = pickle.load(f)
+        model.optimizer.set_weights(weight_values)
+
+
+
 
     def train(self):
         callback = keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False)
@@ -209,7 +244,6 @@ class Solver(object):
         batch_id = 0
         for epoch in trange(0,self.num_iters//self.log_step//5):
             with keras.backend.get_session().as_default():
-
                 outcome = self.G.predict(test_imgs_concatted)
                 tmp = np.concatenate((outcome, np.tile(label_test.reshape((5*self.batch_size,1,1,5)),(1,self.image_size,self.image_size,1))),axis=3)
                 cycled = self.G.predict(tmp)
@@ -262,7 +296,7 @@ class Solver(object):
 
                     epsilon = np.random.uniform(0, 1, size = (self.batch_size,1,1,1))
                     interpolation = epsilon * x_real + (1-epsilon) * x_fake
-                    d_logs = self.dis2batch.train_on_batch([x_real, x_fake, interpolation], [real, fake, c_org, np.ones(self.batch_size)])
+                    d_logs = self.DIS.train_on_batch([x_real, x_fake, interpolation], [real, fake, c_org, np.ones(self.batch_size)])
                     write_log(callback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_id)
                     batch_id += 1
 
@@ -270,6 +304,16 @@ class Solver(object):
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, fake, c_trg])
                 write_log(callback, gen_names, g_logs[1:4], batch_id)
+
+            if (epoch > 0, epoch % (self.model_save_step // self.log_step) == 0):
+                self.restore_epoch += 1
+
+                self.combined.save_weights(self.model_dir + "combined_weights" + str(self.restore_epoch) + ".h5")
+
+                self.store_optimizer(self.combined, "combined")
+                self.store_optimizer(self.DIS, "DIS")
+
+            
 
 
 
