@@ -23,7 +23,8 @@ def ResidualBlock(x, n_filters):
     y = ConvBlock(x, n_filters = n_filters, kernel_size = 3, strides = 1)
     y = Conv2D(filters = n_filters, kernel_size = 3, strides = 1, padding = 'same', use_bias = False)(y)
     y = InstanceNormalization()(y)
-    return Add()([x,y])
+    y = Add()([x,y])
+    return Activation('relu')(x)
 
 # Create and return generator model
 def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 128):
