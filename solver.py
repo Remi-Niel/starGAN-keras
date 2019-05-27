@@ -117,7 +117,7 @@ class Solver(object):
             self.model_dir += '/'
         else:
             self.model_dir += '/'
-            self.combined.load_weights(self.model_dir + "combined_weights   " + str(self.restore_epoch) + ".h5")
+            self.combined.load_weights(self.model_dir + "combined_weights" + str(self.restore_epoch) + ".h5")
             self.restore_optimizer(self.combined, "combined")
             self.restore_optimizer(self.DIS, "DIS")
 
@@ -249,7 +249,7 @@ class Solver(object):
             start = epoch * self.model_save_step//self.log_step
             batch_id = start * 5
             
-        for epoch in trange(start,total_steps):
+        for epoch in trange(start,total_steps+1):
 
             reduction = epoch - total_steps/2
             if (reduction > 0):
@@ -320,7 +320,7 @@ class Solver(object):
                 g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape((self.batch_size,1)),(1,4)), c_trg])
                 write_log(callback, gen_names, g_logs[1:4], batch_id)
 
-            if (epoch > 0, epoch % (self.model_save_step // self.log_step) == 0):
+            if (epoch > 0 and epoch % (self.model_save_step // self.log_step) == 0):
                 self.restore_epoch += 1
 
                 self.combined.save_weights(self.model_dir + "combined_weights" + str(self.restore_epoch) + ".h5")
