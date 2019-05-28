@@ -55,7 +55,8 @@ class GradNorm(Layer):
         grads = K.gradients(target, wrt)
         assert len(grads) == 1
         grad = grads[0]
-        return K.sqrt(K.sum(K.batch_flatten(K.square(grad)), axis=1, keepdims=True))
+        grad_norm = tf.norm(tf.layers.flatten(grad))
+        return grad_norm
 
     def compute_output_shape(self, input_shapes):
         return (input_shapes[1][0], 1)
