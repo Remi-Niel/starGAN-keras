@@ -164,7 +164,7 @@ class Solver(object):
 
         self.combined = Model(inputs = [combined_real_img, input_orig_labels, input_target_labels], outputs = [reconstr_img, output_src, output_cls])
 
-        self.combined.compile(loss = ["mae", neg_mean_loss, self.custom_bin], loss_weights = [self.lambda_rec, 1, self.lambda_cls], optimizer = self.g_optimizer)
+        self.combined.compile(loss = ["mae", neg_mean_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, 1, self.lambda_cls], optimizer = self.g_optimizer)
 
         shape = (self.image_size,self.image_size,3)
         fake_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
@@ -176,7 +176,7 @@ class Solver(object):
 
         self.D.trainable = True
 
-        self.DIS.compile(loss=[mean_loss, neg_mean_loss, self.custom_bin, 'mse'], loss_weights = [1, 1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
+        self.DIS.compile(loss=[mean_loss, neg_mean_loss, "binary_crossentropy", 'mse'], loss_weights = [1, 1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
