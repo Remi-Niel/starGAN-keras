@@ -42,8 +42,6 @@ def neg_mean_loss(y_true, y_pred):
 def multiple_loss(y_true, y_pred):
     return K.mean(y_true*y_pred)
 
-def custom_bin(y_true, y_pred):
-    return tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true,logits=y_pred)
 
 class GradNorm(Layer):
     def __init__(self, **kwargs):
@@ -63,6 +61,10 @@ class GradNorm(Layer):
         return (input_shapes[1][0], 1)
 
 class Solver(object):
+
+
+    def custom_bin(self, y_true, y_pred):
+        return tf.divide(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true,logits=y_pred),self.n_labels)
 
     def isdir(self):
         i=1;
@@ -147,33 +149,33 @@ class Solver(object):
 
         self.D.trainable = False
 
-        input_img = Input(shape = (self.image_size, self.image_size, 3))
+        combined_real_img = Input(shape = (self.image_size, self.image_size, 3))
         input_orig_labels = Input(shape = (self.image_size, self.image_size, self.n_labels))
         input_target_labels = Input(shape = (self.image_size, self.image_size, self.n_labels))
 
-        concatted_input = Concatenate(axis=3)([input_img, input_target_labels])
+        concatted_input = Concatenate(axis=3)([combined_real_img, input_target_labels])
 
-        fake_img = self.G(concatted_input)
-        output_D     = self.D(fake_img)
-        concatted_fake_img = Concatenate(axis=3)([fake_img,input_orig_labels])
-        reconstr_img = self.G(concatted_fake_img)
+        combined_fake_img = self.G(concatted_input)
+        output_src, output_cls     = self.D(combined_fake_img)
+        concatted_combined_fake_img = Concatenate(axis=3)([combined_fake_img,input_orig_labels])
+        reconstr_img = self.G(concatted_combined_fake_img)
 
 
-        self.combined = Model(inputs = [input_img, input_orig_labels, input_target_labels], outputs = [reconstr_img] + output_D)
+        self.combined = Model(inputs = [combined_real_img, input_orig_labels, input_target_labels], outputs = [reconstr_img, output_src, output_cls])
 
-        self.combined.compile(loss = ["mae", neg_mean_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, 1, self.lambda_cls], optimizer = self.g_optimizer)
+        self.combined.compile(loss = ["mae", neg_mean_loss, self.custom_bin], loss_weights = [self.lambda_rec, 1, self.lambda_cls], optimizer = self.g_optimizer)
 
         shape = (self.image_size,self.image_size,3)
         fake_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
         norm = GradNorm()([self.D(interpolation)[0], interpolation])
-        fake_output_D = self.D(fake_input)
-        real_output_D = self.D(real_input)
-        self.DIS = Model([real_input, fake_input, interpolation], [fake_output_D[0]] + real_output_D + [norm])
+        fake_output_src, fake_output_cls = self.D(fake_input)
+        real_output_src, real_output_cls = self.D(real_input)
+        self.DIS = Model([real_input, fake_input, interpolation], [fake_output_src, real_output_src, real_output_cls, norm])
         # self.DIS = Model([gen_input], output_D)
 
         self.D.trainable = True
 
-        self.DIS.compile(loss=[mean_loss, neg_mean_loss, "binary_crossentropy", 'mse'], loss_weights = [1, 1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
+        self.DIS.compile(loss=[mean_loss, neg_mean_loss, self.custom_bin, 'mse'], loss_weights = [1, 1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
@@ -246,7 +248,7 @@ class Solver(object):
 
         start = 0
         if self.restore_epoch > 0:
-            start = epoch * self.model_save_step//self.log_step
+            start = self.restore_epoch * self.model_save_step//self.log_step
             batch_id = start * 5
             
         for epoch in trange(start,total_steps+1):
@@ -311,14 +313,14 @@ class Solver(object):
 
                     epsilon = np.random.uniform(0, 1, size = (self.batch_size,1,1,1))
                     interpolation = epsilon * x_real + (1-epsilon) * x_fake
-                    d_logs = self.DIS.train_on_batch([x_real, x_fake, interpolation], [np.tile(real.reshape((self.batch_size,1)),(1,4)), np.tile(fake.reshape((self.batch_size,1)),(1,4)), c_org, np.ones(self.batch_size)])
-                    write_log(callback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_id)
+                    d_logs = self.DIS.train_on_batch([x_real, x_fake, interpolation], [np.tile(real.reshape((self.batch_size,1)),(1,4)), np.tile(fake.reshape((self.batch_size,1)),(1,4)), c_org, np.ones(self.batch_size)])    
                     batch_id += 1
 
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape((self.batch_size,1)),(1,4)), c_trg])
                 write_log(callback, gen_names, g_logs[1:4], batch_id)
+                write_log(callback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_id)
 
             if (epoch > 0 and epoch % (self.model_save_step // self.log_step) == 0):
                 self.restore_epoch += 1

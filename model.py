@@ -24,7 +24,8 @@ def ResidualBlock(x, n_filters):
     y = Conv2D(filters = n_filters, kernel_size = 3, strides = 1, padding = 'same', use_bias = False)(y)
     y = InstanceNormalization()(y)
     y = Add()([x,y])
-    return Activation('relu')(x)
+    #y = Activation('relu')(y)
+    return y
 
 # Create and return generator model
 def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 128):
@@ -71,7 +72,7 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     out_src = Conv2D(1, kernel_size = 3, strides = 1, padding = 'same', use_bias = False)(x)
     out_src = Flatten()(out_src)
     
-    out_cls = Conv2D(n_labels, kernel_size = kernel_size, padding = 'valid', use_bias = False, activation = 'sigmoid')(x)
+    out_cls = Conv2D(n_labels, kernel_size = kernel_size, padding = 'valid', use_bias = False)(x)
     out_cls = Flatten()(out_cls)
 
     discriminator = Model(input_img, [out_src, out_cls], name = 'discriminator')
