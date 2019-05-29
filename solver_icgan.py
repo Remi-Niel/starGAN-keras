@@ -260,6 +260,8 @@ class Solver(object):
                     d_loss_fake = self.dis.train_on_batch(x_fake, label_trg)
                     d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 
+                    g_loss = self.gan.train_on_batch(noise, label_trg)
+
 
 
 
