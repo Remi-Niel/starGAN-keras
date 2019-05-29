@@ -42,6 +42,9 @@ def neg_mean_loss(y_true, y_pred):
 def multiple_loss(y_true, y_pred):
     return K.mean(y_true*y_pred)
 
+def ls_loss(y_true, y_pred):
+    return tf.reduce_mean(tf.squared_difference(y_true, y_pred))
+
 
 class GradNorm(Layer):
     def __init__(self, **kwargs):
@@ -65,7 +68,7 @@ class Solver(object):
 
 
     def custom_bin(self, y_true, y_pred):
-        return tf.divide(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true,logits=y_pred),self.n_labels)
+        return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true,logits=y_pred))
 
     def isdir(self):
         i=1;
@@ -164,7 +167,7 @@ class Solver(object):
 
         self.combined = Model(inputs = [combined_real_img, input_orig_labels, input_target_labels], outputs = [reconstr_img, output_src, output_cls])
 
-        self.combined.compile(loss = ["mae", neg_mean_loss, "binary_crossentropy"], loss_weights = [self.lambda_rec, 1, self.lambda_cls], optimizer = self.g_optimizer)
+        self.combined.compile(loss = ["mae", neg_mean_loss, self.custom_bin], loss_weights = [self.lambda_rec, 1, self.lambda_cls], optimizer = self.g_optimizer)
 
         shape = (self.image_size,self.image_size,3)
         fake_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
@@ -176,7 +179,7 @@ class Solver(object):
 
         self.D.trainable = True
 
-        self.DIS.compile(loss=[mean_loss, neg_mean_loss, "binary_crossentropy", 'mse'], loss_weights = [1, 1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
+        self.DIS.compile(loss=[mean_loss, neg_mean_loss, self.custom_bin, 'mse'], loss_weights = [1, 1, self.lambda_cls, self.lambda_gp], optimizer= self.d_optimizer)
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
@@ -309,17 +312,17 @@ class Solver(object):
                     x_fake = self.G.predict(x_concatted)
 
 
-                    fake = 0*np.ones(self.batch_size)
+                    fake = np.zeros(self.batch_size)
                     real = np.ones(self.batch_size)
 
                     epsilon = np.random.uniform(0, 1, size = (self.batch_size,1,1,1))
                     interpolation = epsilon * x_real + (1-epsilon) * x_fake
-                    d_logs = self.DIS.train_on_batch([x_real, x_fake, interpolation], [np.tile(real.reshape((self.batch_size,1)),(1,4)), np.tile(fake.reshape((self.batch_size,1)),(1,4)), c_org, np.ones(self.batch_size)])    
+                    d_logs = self.DIS.train_on_batch([x_real, x_fake, interpolation], [np.tile(fake.reshape((self.batch_size,1)),(1,4)), np.tile(real.reshape((self.batch_size,1)),(1,4)), c_org, np.ones(self.batch_size)])    
                     batch_id += 1
 
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
-                g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(fake.reshape((self.batch_size,1)),(1,4)), c_trg])
+                g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(real.reshape((self.batch_size,1)),(1,4)), c_trg])
                 write_log(callback, gen_names, g_logs[1:4], batch_id)
                 write_log(callback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_id)
 
