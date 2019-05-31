@@ -102,3 +102,31 @@ def get_encoder_ey(n_labels = 5, im_size = 128):
     encoder_ey = tf.keras.Model([input_img], x, name = 'encoder_ey')
 
     return encoder_ey
+
+def get_encoder_comb(n_labels = 5, im_size = 128):
+    x = input_img = tf.keras.layers.Input(shape = (im_size, im_size, 3))
+
+
+    depth = [32,64,128,256]
+    for idx, filters in enumerate(depth):
+        x = tf.keras.layers.Conv2D(filters=filters, kernel_size=5,
+                                   strides=2, padding='SAME')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.ReLU()(x) 
+
+    x = tf.keras.layers.Flatten()(x)
+
+    ez = tf.keras.layers.Dense(units=4096)(x)
+    ez = tf.keras.layers.BatchNormalization()(ez)
+    ez = tf.keras.layers.ReLU()(ez)
+    ez = tf.keras.layers.Dense(units=100)(ez)
+
+    ey = tf.keras.layers.Dense(units=512)(x)
+    ey = tf.keras.layers.BatchNormalization()(ey)
+    ey = tf.keras.layers.ReLU()(ey)
+    ey = tf.keras.layers.Dense(units=n_labels)(ey)
+
+
+    encoder_ez = tf.keras.Model([input_img], [ez,ey], name = 'encoder_comb')
+
+    return encoder_ey

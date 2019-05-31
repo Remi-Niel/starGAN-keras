@@ -140,15 +140,14 @@ class Solver(object):
 
     #http://shaofanlai.com/post/10
     def build_model(self):
-        self.Ez = get_encoder_ez(self.n_labels, self.image_size)
-        self.Ey = get_encoder_ey(self.n_labels, self.image_size)
+        self.E = get_encoder_ez(self.n_labels, self.image_size)
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 100)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, 128)
 
         self.d_optimizer = tf.keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
         self.g_optimizer = tf.keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
-        self.ez_optimizer = tf.keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
-        self.ey_optimizer = tf.keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
+        self.e_optimizer = tf.keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
+
 
         self.D.compile(loss='binary_crossentropy', optimizer=self.d_optimizer) # make discriminator
         self.Ez.compile(loss='binary_crossentropy', optimizer=self.ez_optimizer)
@@ -160,16 +159,14 @@ class Solver(object):
         orig_labels = tf.keras.layers.Input([self.n_labels])
         target_labels = tf.keras.layers.Input([1,1,self.n_labels])
 
-        # ez_output = self.Ez(img) # this gives latent space z
-        # ey_output = self.Ey(img) # this gives labels y
-        # ey_output_ = ey_output
-
         fake_image = self.G([noise, target_labels]) # fake image
         self.D.trainable = False
-        # fake_image = self.G([ez_output, ey_output]) 
+        
+        [ez_output,ey_output] = self.E(img) # this gives latent space z and image label y
+        
+        fake_image_E = self.G([ez_output, ey_output]) 
 
-        # ez_output_rec = self.Ez(fake_image) # reconstructed image labels
-
+        [ez_output_rec, ey_output_rec] = self.E(fake_image) # reconstructed image labels
 
         output_cls = self.D([fake_image, target_labels]) # discriminator output fake image
 
