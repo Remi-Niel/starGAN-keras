@@ -2,7 +2,7 @@ import tensorflow
 import keras
 from keras.layers import Activation, Dense, Input, Lambda, LeakyReLU
 from keras.layers import Conv2D, Flatten, AveragePooling2D, Add
-from keras.layers import Reshape, Conv2DTranspose
+from keras.layers import Reshape, Conv2DTranspose, Concatenate
 from keras.models import Model
 import numpy as np
 from instancenormalization import InstanceNormalization
@@ -31,22 +31,28 @@ def ResidualBlock(x, n_filters):
 def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 128):
     input_img = Input(shape = (im_size, im_size, 3 + n_labels))
     
-    x = ConvBlock(input_img, n_filters = n_filters, kernel_size = 7, strides = 1)
+    down_0 = ConvBlock(input_img, n_filters = n_filters, kernel_size = 7, strides = 1)
 
     # Down-sampling layers
     curr_filters = n_filters
-    for i in range(2):
-        x = ConvBlock(x, n_filters = 2 * curr_filters, kernel_size = 4, strides = 2)
-        curr_filters *= 2
+    curr_filters *= 2
+    down_1 = ConvBlock(down_0, n_filters = curr_filters, kernel_size = 4, strides = 2)
+    curr_filters *= 2
+    down_2 = ConvBlock(down_1, n_filters = curr_filters, kernel_size = 4, strides = 2)
 
+    x = down_2
     # Bottleneck layers
     for i in range(repeat_num):
         x = ResidualBlock(x, curr_filters)
 
     # Up-sampling layers
-    for i in range(2):
-        x = ConvTransposeBlock(x, curr_filters // 2)
-        curr_filters //= 2
+    curr_filters //= 2
+    x = Concatenate(axis = 3)([x,down_2])
+    x = ConvTransposeBlock(x, curr_filters)
+    curr_filters //= 2
+    x = Concatenate(axis = 3)([x,down_1])
+    x = ConvTransposeBlock(x, curr_filters)
+    x = Concatenate(axis = 3)([x,down_0])
 
     x = Conv2D(filters = 3, kernel_size = 7, strides = 1, padding = 'same', use_bias = False)(x)
     out_im = Activation('tanh')(x) 
