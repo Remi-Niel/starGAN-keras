@@ -44,7 +44,7 @@ class InstanceNormalization(Layer):
     """
     def __init__(self,
                  axis=None,
-                 epsilon=1e-3,
+                 epsilon=1e-5,
                  center=True,
                  scale=True,
                  beta_initializer='zeros',
