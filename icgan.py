@@ -7,8 +7,14 @@ def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 100):
     input_img = tf.keras.layers.Input(shape = (1,1,im_size))
     input_labels = tf.keras.layers.Input(shape=[1,1,n_labels])
     x = tf.keras.layers.Concatenate()([input_img,input_labels])
+    x = tf.keras.layers.Reshape((1,1,100+n_labels))(x)
 
-    depth = [512, 256, 128, 64]
+    x = tf.keras.layers.Conv2DTranspose(filters=512, kernel_size=4,
+                               strides=4, padding='SAME')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.ReLU()(x)
+
+    depth = [256, 128, 64]
     for idx, filters in enumerate(depth):
         x = tf.keras.layers.Conv2DTranspose(filters=filters, kernel_size=4,
                                    strides=2, padding='SAME')(x)
@@ -21,6 +27,7 @@ def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 100):
 
     generator = tf.keras.Model([input_img, input_labels], x, name = 'generator')
 
+    print(generator.summary())
     return generator
 
 # Create and return discriminator model
@@ -90,6 +97,6 @@ def get_encoder_ey(n_labels = 5, im_size = 128):
     x = tf.keras.layers.ReLU()(x)
     x = tf.keras.layers.Dense(units=n_labels)(x)
 
-    encoder_ey = tf.keras.Model([input_img], x, name = 'encoder_ez')
+    encoder_ey = tf.keras.Model([input_img], x, name = 'encoder_ey')
 
     return encoder_ey

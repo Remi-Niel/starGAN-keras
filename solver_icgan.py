@@ -2,8 +2,6 @@ from icgan import get_generator, get_discriminator, get_encoder_ez, get_encoder_
 import tensorflow as tf
 import keras
 from keras.engine.topology import Layer
-from keras.models import Model
-from keras.layers import Input, Concatenate
 import numpy as np
 import os
 import time
@@ -146,33 +144,35 @@ class Solver(object):
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 100)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, 64)
 
-        self.d_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
-        self.g_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2)
-        self.ez_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
-        self.ey_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2)
+        self.d_optimizer = tf.keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
+        self.g_optimizer = tf.keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2)
+        self.ez_optimizer = tf.keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
+        self.ey_optimizer = tf.keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2)
 
         self.D.compile(loss='binary_crossentropy', optimizer=self.d_optimizer) # make discriminator
-        self.Ez.compile(optimizer=self.ez_optimizer)
-        self.Ey.compile(optimizer=self.ey_optimizer)
+        self.Ez.compile(loss='binary_crossentropy', optimizer=self.ez_optimizer)
+        self.Ey.compile(loss='binary_crossentropy', optimizer=self.ey_optimizer)
         self.D.trainable = False
 
 
-        img = Input(self.image_size, self.image_size, 3)
-        orig_labels = Input(self.n_labels)
-        target_labels = Input(self.n_labels)
+        img = tf.keras.layers.Input((self.image_size, self.image_size, 3))
+        orig_labels = tf.keras.layers.Input([self.n_labels])
+        target_labels = tf.keras.layers.Input([self.n_labels])
 
         ez_output = self.Ez(img) # this gives latent space z
         ey_output = self.Ey(img) # this gives labels y
         ey_output_ = ey_output
 
-        fake_image = self.G(ez_output, ey_output_) # fake image
+        fake_image = self.G([ez_output, ey_output_]) # fake image
 
-        ez_output_rec = self.Ez(fake_image) # reconstructed image labels
+        print fake_image.shape
+        print ey_output.shape
+        # ez_output_rec = self.Ez(fake_image) # reconstructed image labels
 
 
-        output_cls = self.D(fake_image, ey_output) # discriminator output fake image
+        output_cls = self.D([fake_image, ey_output]) # discriminator output fake image
 
-        self.gan = Model(inputs = img, outputs = [output_cls, fake_image, ez_output_rec, ey_output], name='GAN')
+        self.gan = tf.keras.Model(inputs = [img, orig_labels], outputs = [output_cls])
         self.gan.compile(loss=['binary_crossentropy'],optimizer=self.d_optimizer)
 
 
@@ -254,13 +254,19 @@ class Solver(object):
 
                     label_trg = np.flip(label_org, axis=0)
 
-                    x_fake = self.G.predict(x_real, label_trg)
 
-                    d_loss_real = self.dis.train_on_batch(x_real, label_org)
-                    d_loss_fake = self.dis.train_on_batch(x_fake, label_trg)
+                    print(x_real.shape)
+                    print(label_trg.shape)
+                    noise = np.random.normal(0,1,(self.batch_size,100))
+                    noise = noise.reshape(self.batch_size,1,1,100)
+                    label_trg_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
+                    x_fake = self.G.predict([noise, label_trg_])
+
+                    d_loss_real = self.D.train_on_batch([x_real, label_org])
+                    d_loss_fake = self.D.train_on_batch([x_fake, label_trg])
                     d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 
-                    g_loss = self.gan.train_on_batch(noise, label_trg)
+                    g_loss = self.gan.train_on_batch([x_real, label_trg])
 
 
 
