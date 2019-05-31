@@ -68,7 +68,7 @@ class Solver(object):
 
 
     def custom_bin(self, y_true, y_pred):
-        return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true,logits=y_pred))
+        return tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true,logits=y_pred)
 
     def isdir(self):
         i=1;
@@ -260,9 +260,9 @@ class Solver(object):
             reduction = epoch - total_steps/2
             if (reduction > 0):
                 ratio = 1.0 - (float(reduction) / (total_steps/2.0))
-                lr = self.g_lr * ratio
+                lr = (self.g_lr * 0.9 * ratio) + self.g_lr * 0.1
                 K.set_value(self.combined.optimizer.lr, lr)
-                lr = self.d_lr * ratio
+                lr = (self.d_lr * ratio * 0.9) + self.d_lr * 0.1
                 K.set_value(self.DIS.optimizer.lr, lr)
             with keras.backend.get_session().as_default():
                 outcome = self.G.predict(test_imgs_concatted)

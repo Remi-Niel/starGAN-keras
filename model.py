@@ -9,20 +9,20 @@ from instancenormalization import InstanceNormalization
 
 def ConvBlock(x, n_filters, kernel_size, strides):
     x = Conv2D(filters = n_filters, kernel_size = kernel_size, strides = strides, padding = 'same', use_bias = False)(x)
-    x = InstanceNormalization()(x)
+    x = InstanceNormalization(epsilon=1e-05)(x)
     x = Activation('relu')(x)
     return x
 
 def ConvTransposeBlock(x,n_filters):
     x = Conv2DTranspose(filters = n_filters, kernel_size = 4, strides = 2, padding = 'same', use_bias = False)(x)
-    x = InstanceNormalization()(x)
+    x = InstanceNormalization(epsilon=1e-05)(x)
     x = Activation('relu')(x)
     return x
 
 def ResidualBlock(x, n_filters):
     y = ConvBlock(x, n_filters = n_filters, kernel_size = 3, strides = 1)
     y = Conv2D(filters = n_filters, kernel_size = 3, strides = 1, padding = 'same', use_bias = False)(y)
-    y = InstanceNormalization()(y)
+    y = InstanceNormalization(epsilon=1e-05)(y)
     y = Add()([x,y])
     #y = Activation('relu')(y)
     return y
@@ -47,12 +47,12 @@ def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 128):
 
     # Up-sampling layers
     curr_filters //= 2
-    x = Concatenate(axis = 3)([x,down_2])
+    # x = Concatenate(axis = 3)([x,down_2])
     x = ConvTransposeBlock(x, curr_filters)
     curr_filters //= 2
-    x = Concatenate(axis = 3)([x,down_1])
+    # x = Concatenate(axis = 3)([x,down_1])
     x = ConvTransposeBlock(x, curr_filters)
-    x = Concatenate(axis = 3)([x,down_0])
+    # x = Concatenate(axis = 3)([x,down_0])
 
     x = Conv2D(filters = 3, kernel_size = 7, strides = 1, padding = 'same', use_bias = False)(x)
     out_im = Activation('tanh')(x) 
