@@ -1,6 +1,6 @@
 import os
 import argparse
-from solver_icgan import Solver
+from solver import Solver
 from data_generator import get_generator
 
 

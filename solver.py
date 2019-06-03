@@ -148,6 +148,8 @@ class Solver(object):
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, self.image_size)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, self.image_size)
 
+        print(self.G.summary())
+
         self.d_optimizer = keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
         self.g_optimizer = keras.optimizers.Adam(lr = self.g_lr, beta_1 = self.beta_2, beta_2 = self.beta_2)
 
