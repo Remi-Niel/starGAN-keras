@@ -5,8 +5,9 @@ from instancenormalization import InstanceNormalization
 # Create and return generator model
 def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 100):
     input_img = tf.keras.layers.Input(shape = (1,1,im_size))
+    input_img_ = tf.keras.layers.Reshape((1,1,im_size))(input_img)
     input_labels = tf.keras.layers.Input(shape=[1,1,n_labels])
-    x = tf.keras.layers.Concatenate()([input_img,input_labels])
+    x = tf.keras.layers.Concatenate()([input_img_,input_labels])
     x = tf.keras.layers.Reshape((1,1,im_size+n_labels))(x)
 
     x = tf.keras.layers.Conv2DTranspose(filters=512, kernel_size=4,
@@ -42,14 +43,12 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     x = tf.keras.layers.LeakyReLU()(x)
     x = tf.keras.layers.Concatenate()([x,labels])
 
-    print(x.shape)
     depth = [128, 256, 256, 512]
     for idx, filters in enumerate(depth):
         x = tf.keras.layers.Conv2D(filters=filters, kernel_size=4,
                                    strides=2, padding='SAME')(x)
         x = tf.keras.layers.BatchNormalization()(x)
         x = tf.keras.layers.LeakyReLU()(x)       
-        print(x.shape) 
 
     x = tf.keras.layers.Conv2D(filters=1, kernel_size=4,
                                strides=1, padding='VALID', activation='sigmoid')(x)
@@ -57,7 +56,7 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     # x = tf.keras.activations.sigmoid(x)
 
     discriminator = tf.keras.Model([input_img, input_labels], x, name = 'discriminator')
-    print(discriminator.summary())
+    # print(discriminator.summary())
     return discriminator
 
 def get_encoder_ez(n_labels = 5, im_size = 128):
@@ -127,6 +126,6 @@ def get_encoder_comb(n_labels = 5, im_size = 128):
     ey = tf.keras.layers.Dense(units=n_labels)(ey)
 
 
-    encoder_ez = tf.keras.Model([input_img], [ez,ey], name = 'encoder_comb')
-
-    return encoder_ey
+    encoder_comb = tf.keras.Model([input_img], [ez,ey], name = 'encoder_comb')
+    print(encoder_comb.summary())
+    return encoder_comb

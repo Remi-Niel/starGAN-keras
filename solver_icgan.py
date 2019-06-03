@@ -1,4 +1,4 @@
-from icgan import get_generator, get_discriminator, get_encoder_ez, get_encoder_ey
+from icgan import get_generator, get_discriminator, get_encoder_comb
 import tensorflow as tf
 import keras
 from keras.engine.topology import Layer
@@ -140,7 +140,7 @@ class Solver(object):
 
     #http://shaofanlai.com/post/10
     def build_model(self):
-        self.E = get_encoder_ez(self.n_labels, self.image_size)
+        self.E = get_encoder_comb(self.n_labels, self.image_size)
         self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 100)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, 128)
 
@@ -150,8 +150,8 @@ class Solver(object):
 
 
         self.D.compile(loss='binary_crossentropy', optimizer=self.d_optimizer) # make discriminator
-        self.Ez.compile(loss='binary_crossentropy', optimizer=self.ez_optimizer)
-        self.Ey.compile(loss='binary_crossentropy', optimizer=self.ey_optimizer)
+        self.E.compile(loss='binary_crossentropy', optimizer=self.e_optimizer)
+        # self.Ey.compile(loss='binary_crossentropy', optimizer=self.ey_optimizer)
 
 
         img = tf.keras.layers.Input((self.image_size, self.image_size, 3))
@@ -159,19 +159,19 @@ class Solver(object):
         orig_labels = tf.keras.layers.Input([self.n_labels])
         target_labels = tf.keras.layers.Input([1,1,self.n_labels])
 
-        fake_image = self.G([noise, target_labels]) # fake image
+        # fake_image = self.G([noise, target_labels]) # fake image
         self.D.trainable = False
         
         [ez_output,ey_output] = self.E(img) # this gives latent space z and image label y
         
-        fake_image_E = self.G([ez_output, ey_output]) 
+        fake_image_E = self.G([ez_output, target_labels]) 
 
-        [ez_output_rec, ey_output_rec] = self.E(fake_image) # reconstructed image labels
+        [ez_output_rec, ey_output_rec] = self.E(fake_image_E) # reconstructed image labels
 
-        output_cls = self.D([fake_image, target_labels]) # discriminator output fake image
+        output_cls = self.D([fake_image_E, target_labels]) # discriminator output fake image
 
-        self.gan = tf.keras.Model(inputs = [noise, target_labels], outputs = [output_cls])
-        self.gan.compile(loss=['binary_crossentropy'],optimizer=self.g_optimizer)
+        self.gan = tf.keras.Model(inputs = [img, target_labels], outputs = [output_cls, ey_output, ez_output_rec])
+        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae'],optimizer=self.g_optimizer)
         self.gan.summary()
 
 
@@ -231,7 +231,7 @@ class Solver(object):
     def train(self):
         callback = tf.keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False)
         callback.set_model(self.gan)
-
+        gen_names = ['generator classification loss', 'encoder classification loss', 'encoder z loss']
         data_iter = iter(self.data_loader)
         test_imgs, label_test = next(data_iter)
         c_fixed = np.asarray(self.create_labels(label_test, self.n_labels, self.data_loader, self.selected_attrs))
@@ -284,10 +284,11 @@ class Solver(object):
                     batch_id += 1
                     
                     g_labels = np.ones([self.batch_size,1])
-                    g_loss = self.gan.train_on_batch([noise, label_trg_],[g_labels])
+                    [z_, y_] = self.E.predict(x_real)
+                    g_loss = self.gan.train_on_batch([x_real, label_trg_],[g_labels,label_trg,z_])
 
                     write_log(callback, ['d_loss'], [d_loss], batch_id)
-                    write_log(callback, ['g_loss'], [g_loss], batch_id)
+                    write_log(callback, gen_names, g_loss, batch_id)
 
 
 
