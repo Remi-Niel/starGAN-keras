@@ -150,13 +150,13 @@ class Solver(object):
 
 
         self.D.compile(loss='binary_crossentropy', optimizer=self.d_optimizer) # make discriminator
-        self.E.compile(loss='binary_crossentropy', optimizer=self.e_optimizer)
+        # self.E.compile(loss='binary_crossentropy', optimizer=self.e_optimizer)
         # self.Ey.compile(loss='binary_crossentropy', optimizer=self.ey_optimizer)
 
 
         img = tf.keras.layers.Input((self.image_size, self.image_size, 3))
         noise = tf.keras.layers.Input((1,1,100))
-        orig_labels = tf.keras.layers.Input([self.n_labels])
+        orig_labels = tf.keras.layers.Input([1,1,self.n_labels])
         target_labels = tf.keras.layers.Input([1,1,self.n_labels])
 
         # fake_image = self.G([noise, target_labels]) # fake image
@@ -168,10 +168,12 @@ class Solver(object):
 
         [ez_output_rec, ey_output_rec] = self.E(fake_image_E) # reconstructed image labels
 
+        img_rec = self.G([ez_output_rec, orig_labels])
+
         output_cls = self.D([fake_image_E, target_labels]) # discriminator output fake image
 
-        self.gan = tf.keras.Model(inputs = [img, target_labels], outputs = [output_cls, ey_output, ez_output_rec])
-        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae'],optimizer=self.g_optimizer)
+        self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec, ey_output_rec])
+        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae','mae','binary_crossentropy'],optimizer=self.g_optimizer,loss_weights = [2, 1, 1, 2, 1])
         self.gan.summary()
 
 
@@ -271,7 +273,8 @@ class Solver(object):
                     label_trg = np.flip(label_org, axis=0)
 
                     noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
-                    label_trg_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
+                    label_org_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
+                    label_trg_ = label_org.reshape(self.batch_size,1,1,self.n_labels)
                     x_fake = self.G.predict([noise, label_trg_])
 
                     d_real_labels = np.ones([self.batch_size,1])
@@ -285,7 +288,7 @@ class Solver(object):
                     
                     g_labels = np.ones([self.batch_size,1])
                     [z_, y_] = self.E.predict(x_real)
-                    g_loss = self.gan.train_on_batch([x_real, label_trg_],[g_labels,label_trg,z_])
+                    g_loss = self.gan.train_on_batch([x_real, label_trg_,label_org_],[g_labels,label_org,z_,x_real,label_trg])
 
                     write_log(callback, ['d_loss'], [d_loss], batch_id)
                     write_log(callback, gen_names, g_loss, batch_id)
