@@ -259,9 +259,12 @@ class Solver(object):
                 label_trg = np.flip(label_org, axis=0)
 
                 # noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
+                [z,y] = self.E.predict(x_real.reshape(self.batch_size,self.image_size,self.image_size,3))
+                z = z.reshape(self.batch_size,1,1,200)
+
                 label_org_ = label_org.reshape(self.batch_size,1,1,self.n_labels)
                 label_trg_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
-                x_fake = self.G.predict([noise, label_trg_])
+                x_fake = self.G.predict([z, label_trg_])
 
                 d_real_labels = np.ones([self.batch_size,1])
                 d_fake_labels = np.zeros([self.batch_size,1])
