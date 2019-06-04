@@ -141,7 +141,7 @@ class Solver(object):
     #http://shaofanlai.com/post/10
     def build_model(self):
         self.E = get_encoder_comb(self.n_labels, self.image_size)
-        self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 200)
+        self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 400)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, 128)
 
         self.d_optimizer = tf.keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
@@ -173,7 +173,7 @@ class Solver(object):
         output_cls = self.D([fake_image_E, target_labels]) # discriminator output fake image
 
         self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec, ey_output_rec])
-        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae','mae','binary_crossentropy'],optimizer=self.g_optimizer,loss_weights = [1, 1, 1, 4, 1])
+        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae','mae','binary_crossentropy'],optimizer=self.g_optimizer,loss_weights = [1, 1, 1, 8, 1])
         self.gan.summary()
 
 
@@ -260,7 +260,7 @@ class Solver(object):
 
                 # noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
                 [z,y] = self.E.predict(x_real.reshape(self.batch_size,self.image_size,self.image_size,3))
-                z = z.reshape(self.batch_size,1,1,200)
+                z = z.reshape(self.batch_size,1,1,400)
 
                 label_org_ = label_org.reshape(self.batch_size,1,1,self.n_labels)
                 label_trg_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
@@ -286,11 +286,22 @@ class Solver(object):
                 x_input = x_real[0].reshape(1,self.image_size,self.image_size,3)
                 label_input = label_trg[0].reshape(1,1,1,5)
                 [z,y_] = self.E.predict(x_input)
-                z = z.reshape(1,1,1,200)
+                z = z.reshape(1,1,1,400)
+                outcome = self.G.predict([z,label_input])
+                
+                x_input = outcome[0].reshape(1,self.image_size,self.image_size,3)
+                [z,y] = self.E.predict(x_input)
+                z = z.reshape(1,1,1,400)
+                label_input = label_org[0].reshape(1,1,1,5)
+                rec = self.denorm(self.G.predict([z,label_input]))
+                x_real = self.denorm(x_real[0])
+                outcome = self.denorm(outcome[0])
+                rec = rec[0]
+                outcome = np.concatenate((x_real,outcome),axis=1)
+                outcome = np.concatenate((outcome, rec), axis=1)
 
-                outcome = self.denorm(self.G.predict([z,label_input]))
                 s = BytesIO()
-                plt.imsave(s, outcome[0])
+                plt.imsave(s, outcome)
                 out = tf.Summary.Image(encoded_image_string = s.getvalue())
                 summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out)])
                 callback.writer.add_summary(summary, epoch)

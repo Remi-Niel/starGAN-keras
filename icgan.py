@@ -3,7 +3,7 @@ import numpy as np
 from instancenormalization import InstanceNormalization
 
 # Create and return generator model
-def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 200):
+def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 400):
     input_img = tf.keras.layers.Input(shape = (1,1,im_size))
     input_img_ = tf.keras.layers.Reshape((1,1,im_size))(input_img)
     input_labels = tf.keras.layers.Input(shape=[1,1,n_labels])
@@ -60,11 +60,11 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     return discriminator
 
 
-def get_encoder_comb(n_labels = 5, im_size = 128, output_size = 200):
+def get_encoder_comb(n_labels = 5, im_size = 128, output_size = 400):
     x = input_img = tf.keras.layers.Input(shape = (im_size, im_size, 3))
 
 
-    depth = [32,64,128,256]
+    depth = [32,64,128,256,256]
     for idx, filters in enumerate(depth):
         x = tf.keras.layers.Conv2D(filters=filters, kernel_size=5,
                                    strides=2, padding='SAME')(x)
