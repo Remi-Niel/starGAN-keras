@@ -60,7 +60,7 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     return discriminator
 
 
-def get_encoder_comb(n_labels = 5, im_size = 128):
+def get_encoder_comb(n_labels = 5, im_size = 128, output_size = 200):
     x = input_img = tf.keras.layers.Input(shape = (im_size, im_size, 3))
 
 
@@ -76,7 +76,7 @@ def get_encoder_comb(n_labels = 5, im_size = 128):
     ez = tf.keras.layers.Dense(units=4096)(x)
     ez = tf.keras.layers.BatchNormalization()(ez)
     ez = tf.keras.layers.ReLU()(ez)
-    ez = tf.keras.layers.Dense(units=200)(ez)
+    ez = tf.keras.layers.Dense(units=output_size)(ez)
 
     ey = tf.keras.layers.Dense(units=512)(x)
     ey = tf.keras.layers.BatchNormalization()(ey)
