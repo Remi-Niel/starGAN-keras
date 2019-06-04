@@ -306,7 +306,17 @@ class Solver(object):
                 s = BytesIO()
                 plt.imsave(s, outcome)
                 out = tf.Summary.Image(encoded_image_string = s.getvalue())
-                summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out)])
+
+                s = BytesIO()
+                label_org = label_org[0].reshape(1,5)
+                label_trg = label_trg[0].reshape(1,5)
+                labels = np.concatenate((label_org,label_trg))
+                print(labels.shape)
+                plt.imsave(s, labels)
+
+                labels = tf.Summary.Image(encoded_image_string = s.getvalue())
+                summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out),
+                                            tf.Summary.Value(tag = "Labels", image = labels)])
                 callback.writer.add_summary(summary, epoch)
                 callback.writer.flush() 
 
