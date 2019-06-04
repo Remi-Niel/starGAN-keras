@@ -173,7 +173,7 @@ class Solver(object):
         output_cls = self.D([fake_image_E, target_labels]) # discriminator output fake image
 
         self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec, ey_output_rec])
-        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae','mae','binary_crossentropy'],optimizer=self.g_optimizer,loss_weights = [2, 1, 1, 2, 1])
+        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae','mae','binary_crossentropy'],optimizer=self.g_optimizer,loss_weights = [4, 1, 1, 4, 1])
         self.gan.summary()
 
 
@@ -247,52 +247,51 @@ class Solver(object):
         start = 0
         epochs = 10000
         for epoch in trange(start,epochs):               
+            for i in trange(0, self.log_step):
+                # for j in range(0,1):
+                try:
+                    x_real, label_org = next(data_iter)
+                except:
+                    data_iter = iter(self.data_loader)
+                    x_real, label_org = next(data_iter)  
 
-            with tf.keras.backend.get_session().as_default():
+
+                label_trg = np.flip(label_org, axis=0)
+
                 noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
-                # noise = noise.reshape(self.batch_size,1,1,100)
-                f_labels = np.random.normal(0,1,(self.batch_size,1,1,5))
-                outcome = self.denorm(self.G.predict([noise,f_labels]))
+                label_org_ = label_org.reshape(self.batch_size,1,1,self.n_labels)
+                label_trg_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
+                x_fake = self.G.predict([noise, label_trg_])
+
+                d_real_labels = np.ones([self.batch_size,1])
+                d_fake_labels = np.zeros([self.batch_size,1])
+
+                d_loss_real = self.D.train_on_batch([x_real, label_org],[d_real_labels])
+                d_loss_fake = self.D.train_on_batch([x_fake, label_trg],[d_fake_labels])
+                d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+
+                batch_id += 1
+                
+                g_labels = np.ones([self.batch_size,1])
+                [z_, y_] = self.E.predict(x_real)
+                g_loss = self.gan.train_on_batch([x_real, label_trg_,label_org_],[g_labels,label_org,z_,x_real,label_trg])
+
+                write_log(callback, ['d_loss'], [d_loss], batch_id)
+                write_log(callback, gen_names, g_loss, batch_id)
+
+            with tf.keras.backend.get_session().as_default(): 
+                x_input = x_real[0].reshape(1,self.image_size,self.image_size,3)
+                label_input = label_trg[0].reshape(1,1,1,5)
+                [z,y_] = self.E.predict(x_input)
+                z = z.reshape(1,1,1,100)
+
+                outcome = self.denorm(self.G.predict([z,label_input]))
                 s = BytesIO()
                 plt.imsave(s, outcome[0])
                 out = tf.Summary.Image(encoded_image_string = s.getvalue())
                 summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out)])
                 callback.writer.add_summary(summary, epoch)
                 callback.writer.flush() 
-
-
-            for i in trange(0, self.log_step):
-                for j in range(0,5):
-                    try:
-                        x_real, label_org = next(data_iter)
-                    except:
-                        data_iter = iter(self.data_loader)
-                        x_real, label_org = next(data_iter)  
-
-
-                    label_trg = np.flip(label_org, axis=0)
-
-                    noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
-                    label_org_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
-                    label_trg_ = label_org.reshape(self.batch_size,1,1,self.n_labels)
-                    x_fake = self.G.predict([noise, label_trg_])
-
-                    d_real_labels = np.ones([self.batch_size,1])
-                    d_fake_labels = np.zeros([self.batch_size,1])
-
-                    d_loss_real = self.D.train_on_batch([x_real, label_org],[d_real_labels])
-                    d_loss_fake = self.D.train_on_batch([x_fake, label_trg],[d_fake_labels])
-                    d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-
-                    batch_id += 1
-                    
-                    g_labels = np.ones([self.batch_size,1])
-                    [z_, y_] = self.E.predict(x_real)
-                    g_loss = self.gan.train_on_batch([x_real, label_trg_,label_org_],[g_labels,label_org,z_,x_real,label_trg])
-
-                    write_log(callback, ['d_loss'], [d_loss], batch_id)
-                    write_log(callback, gen_names, g_loss, batch_id)
-
 
 
 
