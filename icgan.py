@@ -3,7 +3,7 @@ import numpy as np
 from instancenormalization import InstanceNormalization
 
 # Create and return generator model
-def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 100):
+def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 200):
     input_img = tf.keras.layers.Input(shape = (1,1,im_size))
     input_img_ = tf.keras.layers.Reshape((1,1,im_size))(input_img)
     input_labels = tf.keras.layers.Input(shape=[1,1,n_labels])
@@ -76,7 +76,7 @@ def get_encoder_comb(n_labels = 5, im_size = 128):
     ez = tf.keras.layers.Dense(units=4096)(x)
     ez = tf.keras.layers.BatchNormalization()(ez)
     ez = tf.keras.layers.ReLU()(ez)
-    ez = tf.keras.layers.Dense(units=100)(ez)
+    ez = tf.keras.layers.Dense(units=200)(ez)
 
     ey = tf.keras.layers.Dense(units=512)(x)
     ey = tf.keras.layers.BatchNormalization()(ey)

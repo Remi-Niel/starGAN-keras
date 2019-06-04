@@ -141,7 +141,7 @@ class Solver(object):
     #http://shaofanlai.com/post/10
     def build_model(self):
         self.E = get_encoder_comb(self.n_labels, self.image_size)
-        self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 100)
+        self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 200)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, 128)
 
         self.d_optimizer = tf.keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
@@ -155,7 +155,7 @@ class Solver(object):
 
 
         img = tf.keras.layers.Input((self.image_size, self.image_size, 3))
-        noise = tf.keras.layers.Input((1,1,100))
+        # noise = tf.keras.layers.Input((1,1,100))
         orig_labels = tf.keras.layers.Input([1,1,self.n_labels])
         target_labels = tf.keras.layers.Input([1,1,self.n_labels])
 
@@ -173,7 +173,7 @@ class Solver(object):
         output_cls = self.D([fake_image_E, target_labels]) # discriminator output fake image
 
         self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec, ey_output_rec])
-        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae','mae','binary_crossentropy'],optimizer=self.g_optimizer,loss_weights = [4, 1, 1, 4, 1])
+        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae','mae','binary_crossentropy'],optimizer=self.g_optimizer,loss_weights = [1, 1, 1, 4, 1])
         self.gan.summary()
 
 
@@ -258,7 +258,7 @@ class Solver(object):
 
                 label_trg = np.flip(label_org, axis=0)
 
-                noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
+                # noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
                 label_org_ = label_org.reshape(self.batch_size,1,1,self.n_labels)
                 label_trg_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
                 x_fake = self.G.predict([noise, label_trg_])
@@ -283,7 +283,7 @@ class Solver(object):
                 x_input = x_real[0].reshape(1,self.image_size,self.image_size,3)
                 label_input = label_trg[0].reshape(1,1,1,5)
                 [z,y_] = self.E.predict(x_input)
-                z = z.reshape(1,1,1,100)
+                z = z.reshape(1,1,1,200)
 
                 outcome = self.denorm(self.G.predict([z,label_input]))
                 s = BytesIO()
