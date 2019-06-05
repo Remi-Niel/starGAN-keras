@@ -52,11 +52,12 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
 
     x = tf.keras.layers.Conv2D(filters=1, kernel_size=4,
                                strides=1, padding='VALID', activation='sigmoid')(x)
+    x = tf.keras.layers.Flatten()(x)
     # x = tf.keras.layers.Activation('sigmoid')(x)
     # x = tf.keras.activations.sigmoid(x)
 
     discriminator = tf.keras.Model([input_img, input_labels], x, name = 'discriminator')
-    # print(discriminator.summary())
+    print(discriminator.summary())
     return discriminator
 
 

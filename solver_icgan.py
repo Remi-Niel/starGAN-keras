@@ -281,7 +281,7 @@ class Solver(object):
 
                 batch_id += 1
                 
-                g_labels = np.ones([self.batch_size,1,1,1])
+                g_labels = np.ones([self.batch_size,1])
                 [z_, y_] = self.E.predict(x_real)
                 # print(g_labels.shape)
                 # print(label_org.shape)
