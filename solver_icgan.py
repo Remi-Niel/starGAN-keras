@@ -174,9 +174,15 @@ class Solver(object):
 
         output_cls = self.D([fake_image_E, target_labels]) # discriminator output fake image
 
+        print(output_cls.shape)
+        print(ey_output.shape)
+        print(ez_output_rec.shape)
+        print(img_rec.shape)
+        print(ey_output_fake.shape)
+
         self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec, ey_output_fake])
-        self.gan.compile(loss=['binary_crossentropy','binary_crossentropy','mae','mae','binary_crossentropy'],optimizer=self.g_optimizer,loss_weights = [1, 1, 1, 8, 1])
-        self.gan.summary()
+        self.gan.compile(loss=['binary_crossentropy','mse','mse','mae','mse'],optimizer=self.g_optimizer,loss_weights = [1, 1, 1, 10, 1])
+        # self.gan.summary()
 
 
 
@@ -241,8 +247,6 @@ class Solver(object):
         c_fixed = np.asarray(self.create_labels(label_test, self.n_labels, self.data_loader, self.selected_attrs))
         c_fixed = np.concatenate(c_fixed, axis = 0)
         labels_fixed = c_fixed.reshape((5 * self.batch_size, 1, 1, 5))
-        print(labels_fixed.shape)
-        print(test_imgs.shape)
 
 
         batch_id = 0
@@ -277,8 +281,13 @@ class Solver(object):
 
                 batch_id += 1
                 
-                g_labels = np.ones([self.batch_size,1])
+                g_labels = np.ones([self.batch_size,1,1,1])
                 [z_, y_] = self.E.predict(x_real)
+                # print(g_labels.shape)
+                # print(label_org.shape)
+                # print(z_.shape)
+                # print(x_real.shape)
+                # print(label_trg.shape)
                 g_loss = self.gan.train_on_batch([x_real, label_trg_,label_org_],[g_labels,label_org,z_,x_real,label_trg])
 
                 write_log(callback, ['d_loss'], [d_loss], batch_id)
