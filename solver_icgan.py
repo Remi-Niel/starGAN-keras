@@ -150,17 +150,11 @@ class Solver(object):
 
 
         self.D.compile(loss='binary_crossentropy', optimizer=self.d_optimizer) # make discriminator
-        # self.E.compile(loss='binary_crossentropy', optimizer=self.e_optimizer)
-        # self.Ey.compile(loss='binary_crossentropy', optimizer=self.ey_optimizer)
-
+        self.D.trainable = False
 
         img = tf.keras.layers.Input((self.image_size, self.image_size, 3))
-        # noise = tf.keras.layers.Input((1,1,100))
         orig_labels = tf.keras.layers.Input([1,1,self.n_labels])
         target_labels = tf.keras.layers.Input([1,1,self.n_labels])
-
-        # fake_image = self.G([noise, target_labels]) # fake image
-        self.D.trainable = False
         
         [ez_output,ey_output] = self.E(img) # this gives latent space z and image label y
         
@@ -168,7 +162,7 @@ class Solver(object):
 
         [ez_output_fake, ey_output_fake] = self.E(fake_image_E) # reconstructed image labels
 
-        img_rec = self.G([ez_output_fake, orig_labels])
+        img_rec = self.G([ez_output_fake, ey_output])
 
         [ez_output_rec, ey_output_rec] = self.E(img_rec)
 
@@ -180,8 +174,12 @@ class Solver(object):
         print(img_rec.shape)
         print(ey_output_fake.shape)
 
-        self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec, ey_output_fake])
-        self.gan.compile(loss=['binary_crossentropy','mse','mse','mae','mse'],optimizer=self.g_optimizer,loss_weights = [1, 1, 1, 10, 1])
+        self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec])
+        self.gan.compile(loss=['binary_crossentropy','mse','mse','mae'], optimizer=self.g_optimizer, loss_weights = [1, 1, 1, 10])
+        # self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, img_rec])
+        # self.gan.compile(loss=['binary_crossentropy','mae'], optimizer=self.g_optimizer, loss_weights = [1, 10])
+        # self.E.compile(loss=['mse','mse'], optimizer=self.e_optimizer)
+
         # self.gan.summary()
 
 
@@ -241,7 +239,7 @@ class Solver(object):
     def train(self):
         callback = tf.keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False)
         callback.set_model(self.gan)
-        gen_names = ['generator classification loss', 'encoder y loss', 'encoder z loss', 'img recon', 'label recon']
+        gen_names = ['generator classification loss', 'encoder y loss', 'encoder z loss', 'img recon']
         data_iter = iter(self.data_loader)
         test_imgs, label_test = next(data_iter)
         c_fixed = np.asarray(self.create_labels(label_test, self.n_labels, self.data_loader, self.selected_attrs))
@@ -288,10 +286,10 @@ class Solver(object):
                 # print(z_.shape)
                 # print(x_real.shape)
                 # print(label_trg.shape)
-                g_loss = self.gan.train_on_batch([x_real, label_trg_,label_org_],[g_labels,label_org,z_,x_real,label_trg])
+                g_loss = self.gan.train_on_batch([x_real, label_trg_,label_org_],[g_labels,label_org,z_,x_real])
 
                 write_log(callback, ['d_loss'], [d_loss], batch_id)
-                write_log(callback, gen_names, g_loss, batch_id)
+                write_log(callback, gen_names, g_loss[1:5], batch_id)
 
             with tf.keras.backend.get_session().as_default(): 
                 x_input = x_real[0].reshape(1,self.image_size,self.image_size,3)

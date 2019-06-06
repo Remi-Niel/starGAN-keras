@@ -74,7 +74,7 @@ def get_encoder_comb(n_labels = 5, im_size = 128, output_size = 400):
 
     x = tf.keras.layers.Flatten()(x)
 
-    ez = tf.keras.layers.Dense(units=4096)(x)
+    ez = tf.keras.layers.Dense(units=1024)(x)
     ez = tf.keras.layers.BatchNormalization()(ez)
     ez = tf.keras.layers.ReLU()(ez)
     ez = tf.keras.layers.Dense(units=output_size)(ez)
