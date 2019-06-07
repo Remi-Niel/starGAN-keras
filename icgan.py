@@ -28,7 +28,7 @@ def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 400):
 
     generator = tf.keras.Model([input_img, input_labels], x, name = 'generator')
 
-    # print(generator.summary())
+    print(generator.summary())
     return generator
 
 # Create and return discriminator model
@@ -57,7 +57,7 @@ def get_discriminator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 12
     # x = tf.keras.activations.sigmoid(x)
 
     discriminator = tf.keras.Model([input_img, input_labels], x, name = 'discriminator')
-    print(discriminator.summary())
+    # print(discriminator.summary())
     return discriminator
 
 

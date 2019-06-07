@@ -157,14 +157,22 @@ class Solver(object):
         target_labels = tf.keras.layers.Input([1,1,self.n_labels])
         
         [ez_output,ey_output] = self.E(img) # this gives latent space z and image label y
+
+        y_input = tf.keras.layers.Input([self.n_labels])
+        y_output = tf.keras.layers.Reshape((1,1,self.n_labels))(y_input)
+        self.Ey = tf.keras.Model(y_input, y_output)
+        ey_output_ = self.Ey(ey_output)
         
         fake_image_E = self.G([ez_output, target_labels]) 
-
         [ez_output_fake, ey_output_fake] = self.E(fake_image_E) # reconstructed image labels
-
-        img_rec = self.G([ez_output_fake, ey_output])
-
+        img_rec = self.G([ez_output_fake, ey_output_])
         [ez_output_rec, ey_output_rec] = self.E(img_rec)
+
+        z_input = tf.keras.layers.Input([400])
+        self.Ez = tf.keras.Model(z_input,z_input)
+        ez_output_rec = self.Ez(ez_output_rec)
+
+
 
         output_cls = self.D([fake_image_E, target_labels]) # discriminator output fake image
 
@@ -172,15 +180,16 @@ class Solver(object):
         print(ey_output.shape)
         print(ez_output_rec.shape)
         print(img_rec.shape)
-        print(ey_output_fake.shape)
+        # print(ey_output_fake.shape)
 
+        # losses = {'discriminator': 'binary_crossentropy','encoder_comb': 'mse','encoder_comb': 'mse','generator': 'mae'} # ['binary_crossentropy','mse','mse','mae']
         self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec])
         self.gan.compile(loss=['binary_crossentropy','mse','mse','mae'], optimizer=self.g_optimizer, loss_weights = [1, 1, 1, 10])
         # self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, img_rec])
         # self.gan.compile(loss=['binary_crossentropy','mae'], optimizer=self.g_optimizer, loss_weights = [1, 10])
         # self.E.compile(loss=['mse','mse'], optimizer=self.e_optimizer)
 
-        # self.gan.summary()
+        self.gan.summary()
 
 
 
@@ -296,13 +305,14 @@ class Solver(object):
                 label_input = label_trg[0].reshape(1,1,1,5)
                 [z,y_] = self.E.predict(x_input)
                 z = z.reshape(1,1,1,400)
+                y_.reshape(1,1,1,5)
                 outcome = self.G.predict([z,label_input])
                 
                 x_input = outcome[0].reshape(1,self.image_size,self.image_size,3)
                 [z,y_] = self.E.predict(x_input)
                 z = z.reshape(1,1,1,400)
                 label_input = label_org[0].reshape(1,1,1,5)
-                rec = self.denorm(self.G.predict([z,label_input]))
+                rec = self.denorm(self.G.predict([z,y_]))
 
                 x_real = self.denorm(x_real[0])
                 outcome = self.denorm(outcome[0])
