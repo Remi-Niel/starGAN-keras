@@ -305,12 +305,12 @@ class Solver(object):
                 label_input = label_trg[0].reshape(1,1,1,5)
                 [z,y_] = self.E.predict(x_input)
                 z = z.reshape(1,1,1,400)
-                y_.reshape(1,1,1,5)
                 outcome = self.G.predict([z,label_input])
                 
                 x_input = outcome[0].reshape(1,self.image_size,self.image_size,3)
                 [z,y_] = self.E.predict(x_input)
                 z = z.reshape(1,1,1,400)
+                y_ = y_.reshape(1,1,1,5)
                 label_input = label_org[0].reshape(1,1,1,5)
                 rec = self.denorm(self.G.predict([z,y_]))
 

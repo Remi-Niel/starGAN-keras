@@ -10,12 +10,12 @@ def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 400):
     x = tf.keras.layers.Concatenate()([input_img_,input_labels])
     x = tf.keras.layers.Reshape((1,1,im_size+n_labels))(x)
 
-    x = tf.keras.layers.Conv2DTranspose(filters=512, kernel_size=4,
+    x = tf.keras.layers.Conv2DTranspose(filters=1024, kernel_size=4,
                                strides=2, padding='VALID')(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.ReLU()(x)
 
-    depth = [256, 128, 64, 64]
+    depth = [512, 256, 256, 128]
     for idx, filters in enumerate(depth):
         x = tf.keras.layers.Conv2DTranspose(filters=filters, kernel_size=4,
                                    strides=2, padding='SAME')(x)
