@@ -72,19 +72,25 @@ def get_encoder_comb(n_labels = 5, im_size = 128, output_size = 400):
         x = tf.keras.layers.BatchNormalization()(x)
         x = tf.keras.layers.ReLU()(x) 
 
-    x = tf.keras.layers.Flatten()(x)
+    # x = tf.keras.layers.Flatten()(x)
 
-    ez = tf.keras.layers.Dense(units=1024)(x)
+    # ez = tf.keras.layers.Dense(units=1024)(x)
+    ez = tf.keras.layers.Conv2D(filters=512, kernel_size=5, strides=2, padding='SAME')(x)
     ez = tf.keras.layers.BatchNormalization()(ez)
     ez = tf.keras.layers.ReLU()(ez)
-    ez = tf.keras.layers.Dense(units=output_size)(ez)
+    ez = tf.keras.layers.Conv2D(filters=output_size, kernel_size=2, strides=1, padding='VALID')(ez)
+    ez = tf.keras.layers.Flatten()(ez)
+    # ez = tf.keras.layers.Dense(units=output_size)(ez)
 
-    ey = tf.keras.layers.Dense(units=512)(x)
+    # ey = tf.keras.layers.Dense(units=512)(x)
+    ey = tf.keras.layers.Conv2D(filters=256, kernel_size=5, strides=2, padding='SAME')(x)
     ey = tf.keras.layers.BatchNormalization()(ey)
     ey = tf.keras.layers.ReLU()(ey)
-    ey = tf.keras.layers.Dense(units=n_labels)(ey)
+    ey = tf.keras.layers.Conv2D(filters=n_labels, kernel_size=2, strides=1, padding='VALID')(ey)
+    ey = tf.keras.layers.Flatten()(ey)
+    # ey = tf.keras.layers.Dense(units=n_labels)(ey)
 
 
     encoder_comb = tf.keras.Model([input_img], [ez,ey], name = 'encoder_comb')
-    # print(encoder_comb.summary())
+    print(encoder_comb.summary())
     return encoder_comb

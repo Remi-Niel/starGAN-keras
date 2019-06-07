@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from tqdm import trange
 from keras.layers.merge import _Merge
-import keras.backend as K
 import pickle
 import cv2
 
@@ -33,13 +32,13 @@ class Subtract(_Merge):
         return output
 
 def mean_loss(y_true, y_pred):
-    return K.mean(y_pred)
+    return tf.keras.backend.mean(y_pred)
 
 def neg_mean_loss(y_true, y_pred):
-    return tf.math.scalar_mul(-1,K.mean(y_pred))
+    return tf.math.scalar_mul(-1,tf.keras.backend.mean(y_pred))
 
 def multiple_loss(y_true, y_pred):
-    return K.mean(y_true*y_pred)
+    return tf.keras.backend.mean(y_true*y_pred)
 
 
 class GradNorm(Layer):
@@ -51,10 +50,10 @@ class GradNorm(Layer):
 
     def call(self, inputs):
         target, wrt = inputs
-        grads = K.gradients(target, wrt)
+        grads = tf.keras.backend.gradients(target, wrt)
         assert len(grads) == 1
         grad = grads[0]
-        return K.sqrt(K.sum(K.batch_flatten(K.square(grad)), axis=1, keepdims=True))
+        return tf.keras.backend.sqrt(tf.keras.backend.sum(tf.keras.backend.batch_flatten(tf.keras.backend.square(grad)), axis=1, keepdims=True))
 
     def compute_output_shape(self, input_shapes):
         return (input_shapes[1][0], 1)
@@ -118,9 +117,9 @@ class Solver(object):
             self.model_dir += '/'
         else:
             self.model_dir += '/'
-            self.combined.load_weights(self.model_dir + "combined_weights" + str(self.restore_epoch) + ".h5")
-            self.restore_optimizer(self.combined, "combined")
-            self.restore_optimizer(self.DIS, "DIS")
+            self.gan.load_weights(self.model_dir + "gan_weights" + str(self.restore_epoch) + ".h5")
+            self.restore_optimizer(self.gan, "gan")
+            self.restore_optimizer(self.D, "discriminator")
 
 
     def wasserstein_loss(self, y_true, y_pred):
@@ -231,7 +230,7 @@ class Solver(object):
 
     def store_optimizer(self, model, name):
         symbolic_weights = getattr(model.optimizer, 'weights')
-        weight_values = K.batch_get_value(symbolic_weights)
+        weight_values = tf.keras.backend.batch_get_value(symbolic_weights)
         with open(self.model_dir + name + str(self.restore_epoch)+ "_optimizer.h5",'wb') as f:
             pickle.dump(weight_values, f)
             
@@ -255,10 +254,13 @@ class Solver(object):
         c_fixed = np.concatenate(c_fixed, axis = 0)
         labels_fixed = c_fixed.reshape((5 * self.batch_size, 1, 1, 5))
 
-
         batch_id = 0
         start = 0
+        if self.restore_epoch > 0:
+            start = self.restore_epoch
+            batch_id = self.restore_epoch
         epochs = 10000
+        print(self.model_dir)
         for epoch in trange(start,epochs):               
             for i in trange(0, self.log_step):
                 # for j in range(0,1):
@@ -308,7 +310,7 @@ class Solver(object):
                 outcome = self.G.predict([z,label_input])
                 
                 x_input = outcome[0].reshape(1,self.image_size,self.image_size,3)
-                [z,y_] = self.E.predict(x_input)
+                [z,y] = self.E.predict(x_input)
                 z = z.reshape(1,1,1,400)
                 y_ = y_.reshape(1,1,1,5)
                 label_input = label_org[0].reshape(1,1,1,5)
@@ -336,6 +338,14 @@ class Solver(object):
                                             tf.Summary.Value(tag = "Labels", image = labels)])
                 callback.writer.add_summary(summary, epoch)
                 callback.writer.flush() 
+            if (epoch > 0 and epoch % 50 == 0):
+                self.restore_epoch = batch_id
+                print(self.model_dir)
+                self.gan.save_weights(self.model_dir + "gan_weights" + str(self.restore_epoch) + ".h5")
+
+                self.store_optimizer(self.D, "discriminator")
+                self.store_optimizer(self.gan, "gan")
+                
 
 
 
