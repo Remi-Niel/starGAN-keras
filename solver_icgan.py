@@ -297,7 +297,7 @@ class Solver(object):
                 # print(z_.shape)
                 # print(x_real.shape)
                 # print(label_trg.shape)
-                g_loss = self.gan.train_on_batch([x_real, label_trg_,label_org_],[g_labels,label_org,z_,x_real])
+                g_loss = self.gan.train_on_batch([x_real,label_org_,label_trg_],[g_labels,label_org,z_,x_real])
 
                 write_log(callback, ['d_loss'], [d_loss], batch_id)
                 write_log(callback, gen_names, g_loss[1:5], batch_id)
