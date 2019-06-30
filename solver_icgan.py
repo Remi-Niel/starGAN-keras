@@ -1,4 +1,4 @@
-from icgan import get_generator, get_discriminator, get_encoder_ez, get_encoder_ey
+from icgan import get_generator, get_discriminator, get_encoder_comb
 import tensorflow as tf
 import keras
 from keras.engine.topology import Layer
@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from tqdm import trange
 from keras.layers.merge import _Merge
-import keras.backend as K
 import pickle
 import cv2
 
@@ -33,13 +32,13 @@ class Subtract(_Merge):
         return output
 
 def mean_loss(y_true, y_pred):
-    return K.mean(y_pred)
+    return tf.keras.backend.mean(y_pred)
 
 def neg_mean_loss(y_true, y_pred):
-    return tf.math.scalar_mul(-1,K.mean(y_pred))
+    return tf.math.scalar_mul(-1,tf.keras.backend.mean(y_pred))
 
 def multiple_loss(y_true, y_pred):
-    return K.mean(y_true*y_pred)
+    return tf.keras.backend.mean(y_true*y_pred)
 
 
 class GradNorm(Layer):
@@ -51,10 +50,10 @@ class GradNorm(Layer):
 
     def call(self, inputs):
         target, wrt = inputs
-        grads = K.gradients(target, wrt)
+        grads = tf.keras.backend.gradients(target, wrt)
         assert len(grads) == 1
         grad = grads[0]
-        return K.sqrt(K.sum(K.batch_flatten(K.square(grad)), axis=1, keepdims=True))
+        return tf.keras.backend.sqrt(tf.keras.backend.sum(tf.keras.backend.batch_flatten(tf.keras.backend.square(grad)), axis=1, keepdims=True))
 
     def compute_output_shape(self, input_shapes):
         return (input_shapes[1][0], 1)
@@ -118,9 +117,9 @@ class Solver(object):
             self.model_dir += '/'
         else:
             self.model_dir += '/'
-            self.combined.load_weights(self.model_dir + "combined_weights" + str(self.restore_epoch) + ".h5")
-            self.restore_optimizer(self.combined, "combined")
-            self.restore_optimizer(self.DIS, "DIS")
+            self.gan.load_weights(self.model_dir + "gan_weights" + str(self.restore_epoch) + ".h5")
+            self.restore_optimizer(self.gan, "gan")
+            self.restore_optimizer(self.D, "discriminator")
 
 
     def wasserstein_loss(self, y_true, y_pred):
@@ -140,8 +139,8 @@ class Solver(object):
 
     #http://shaofanlai.com/post/10
     def build_model(self):
-        self.E = get_encoder_ez(self.n_labels, self.image_size)
-        self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 100)
+        self.E = get_encoder_comb(self.n_labels, self.image_size)
+        self.G = get_generator(self.g_conv_dim, self.n_labels, self.g_repeat_num, 400)
         self.D = get_discriminator(self.d_conv_dim, self.n_labels, self.d_repeat_num, 128)
 
         self.d_optimizer = tf.keras.optimizers.Adam(lr = self.d_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
@@ -150,28 +149,45 @@ class Solver(object):
 
 
         self.D.compile(loss='binary_crossentropy', optimizer=self.d_optimizer) # make discriminator
-        self.Ez.compile(loss='binary_crossentropy', optimizer=self.ez_optimizer)
-        self.Ey.compile(loss='binary_crossentropy', optimizer=self.ey_optimizer)
-
+        self.D.trainable = False
 
         img = tf.keras.layers.Input((self.image_size, self.image_size, 3))
-        noise = tf.keras.layers.Input((1,1,100))
-        orig_labels = tf.keras.layers.Input([self.n_labels])
+        orig_labels = tf.keras.layers.Input([1,1,self.n_labels])
         target_labels = tf.keras.layers.Input([1,1,self.n_labels])
-
-        fake_image = self.G([noise, target_labels]) # fake image
-        self.D.trainable = False
         
         [ez_output,ey_output] = self.E(img) # this gives latent space z and image label y
+
+        y_input = tf.keras.layers.Input([self.n_labels])
+        y_output = tf.keras.layers.Reshape((1,1,self.n_labels))(y_input)
+        self.Ey = tf.keras.Model(y_input, y_output)
+        ey_output_ = self.Ey(ey_output)
         
-        fake_image_E = self.G([ez_output, ey_output]) 
+        fake_image_E = self.G([ez_output, target_labels]) 
+        [ez_output_fake, ey_output_fake] = self.E(fake_image_E) # reconstructed image labels
+        img_rec = self.G([ez_output_fake, ey_output_])
+        [ez_output_rec, ey_output_rec] = self.E(img_rec)
 
-        [ez_output_rec, ey_output_rec] = self.E(fake_image) # reconstructed image labels
+        z_input = tf.keras.layers.Input([400])
+        self.Ez = tf.keras.Model(z_input,z_input)
+        ez_output_rec = self.Ez(ez_output_rec)
 
-        output_cls = self.D([fake_image, target_labels]) # discriminator output fake image
 
-        self.gan = tf.keras.Model(inputs = [noise, target_labels], outputs = [output_cls])
-        self.gan.compile(loss=['binary_crossentropy'],optimizer=self.g_optimizer)
+
+        output_cls = self.D([fake_image_E, target_labels]) # discriminator output fake image
+
+        print(output_cls.shape)
+        print(ey_output.shape)
+        print(ez_output_rec.shape)
+        print(img_rec.shape)
+        # print(ey_output_fake.shape)
+
+        # losses = {'discriminator': 'binary_crossentropy','encoder_comb': 'mse','encoder_comb': 'mse','generator': 'mae'} # ['binary_crossentropy','mse','mse','mae']
+        self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, ey_output, ez_output_rec, img_rec])
+        self.gan.compile(loss=['binary_crossentropy','mse','mse','mae'], optimizer=self.g_optimizer, loss_weights = [1, 1, 1, 10])
+        # self.gan = tf.keras.Model(inputs = [img, target_labels, orig_labels], outputs = [output_cls, img_rec])
+        # self.gan.compile(loss=['binary_crossentropy','mae'], optimizer=self.g_optimizer, loss_weights = [1, 10])
+        # self.E.compile(loss=['mse','mse'], optimizer=self.e_optimizer)
+
         self.gan.summary()
 
 
@@ -214,7 +230,7 @@ class Solver(object):
 
     def store_optimizer(self, model, name):
         symbolic_weights = getattr(model.optimizer, 'weights')
-        weight_values = K.batch_get_value(symbolic_weights)
+        weight_values = tf.keras.backend.batch_get_value(symbolic_weights)
         with open(self.model_dir + name + str(self.restore_epoch)+ "_optimizer.h5",'wb') as f:
             pickle.dump(weight_values, f)
             
@@ -231,64 +247,105 @@ class Solver(object):
     def train(self):
         callback = tf.keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False)
         callback.set_model(self.gan)
-
+        gen_names = ['generator classification loss', 'encoder y loss', 'encoder z loss', 'img recon']
         data_iter = iter(self.data_loader)
         test_imgs, label_test = next(data_iter)
         c_fixed = np.asarray(self.create_labels(label_test, self.n_labels, self.data_loader, self.selected_attrs))
         c_fixed = np.concatenate(c_fixed, axis = 0)
         labels_fixed = c_fixed.reshape((5 * self.batch_size, 1, 1, 5))
-        print(labels_fixed.shape)
-        print(test_imgs.shape)
-
 
         batch_id = 0
         start = 0
+        if self.restore_epoch > 0:
+            start = self.restore_epoch
+            batch_id = self.restore_epoch
         epochs = 10000
+        print(self.model_dir)
         for epoch in trange(start,epochs):               
+            for i in trange(0, self.log_step):
+                # for j in range(0,1):
+                try:
+                    x_real, label_org = next(data_iter)
+                except:
+                    data_iter = iter(self.data_loader)
+                    x_real, label_org = next(data_iter)  
 
-            with tf.keras.backend.get_session().as_default():
-                noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
-                # noise = noise.reshape(self.batch_size,1,1,100)
-                f_labels = np.random.normal(0,1,(self.batch_size,1,1,5))
-                outcome = self.denorm(self.G.predict([noise,f_labels]))
+
+                label_trg = np.flip(label_org, axis=0)
+
+                # noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
+                [z,y] = self.E.predict(x_real.reshape(self.batch_size,self.image_size,self.image_size,3))
+                z = z.reshape(self.batch_size,1,1,400)
+
+                label_org_ = label_org.reshape(self.batch_size,1,1,self.n_labels)
+                label_trg_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
+                x_fake = self.G.predict([z, label_trg_])
+
+                d_real_labels = np.ones([self.batch_size,1])
+                d_fake_labels = np.zeros([self.batch_size,1])
+
+                d_loss_real = self.D.train_on_batch([x_real, label_org],[d_real_labels])
+                d_loss_fake = self.D.train_on_batch([x_fake, label_trg],[d_fake_labels])
+                d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+
+                batch_id += 1
+                
+                g_labels = np.ones([self.batch_size,1])
+                [z_, y_] = self.E.predict(x_real)
+                # print(g_labels.shape)
+                # print(label_org.shape)
+                # print(z_.shape)
+                # print(x_real.shape)
+                # print(label_trg.shape)
+                g_loss = self.gan.train_on_batch([x_real,label_org_,label_trg_],[g_labels,label_org,z_,x_real])
+
+                write_log(callback, ['d_loss'], [d_loss], batch_id)
+                write_log(callback, gen_names, g_loss[1:5], batch_id)
+
+            with tf.keras.backend.get_session().as_default(): 
+                x_input = x_real[0].reshape(1,self.image_size,self.image_size,3)
+                label_input = label_trg[0].reshape(1,1,1,5)
+                [z,y_] = self.E.predict(x_input)
+                z = z.reshape(1,1,1,400)
+                outcome = self.G.predict([z,label_input])
+                
+                x_input = outcome[0].reshape(1,self.image_size,self.image_size,3)
+                [z,y] = self.E.predict(x_input)
+                z = z.reshape(1,1,1,400)
+                y_ = y_.reshape(1,1,1,5)
+                label_input = label_org[0].reshape(1,1,1,5)
+                rec = self.denorm(self.G.predict([z,y_]))
+
+                x_real = self.denorm(x_real[0])
+                outcome = self.denorm(outcome[0])
+                rec = rec[0]
+                outcome = np.concatenate((x_real,outcome),axis=1)
+                outcome = np.concatenate((outcome, rec), axis=1)
+
                 s = BytesIO()
-                plt.imsave(s, outcome[0])
+                plt.imsave(s, outcome)
                 out = tf.Summary.Image(encoded_image_string = s.getvalue())
-                summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out)])
+
+                s = BytesIO()
+                label_org = label_org[0].reshape(1,5)
+                label_trg = label_trg[0].reshape(1,5)
+                labels = np.concatenate((label_org,label_trg))
+                print(labels.shape)
+                plt.imsave(s, labels)
+
+                labels = tf.Summary.Image(encoded_image_string = s.getvalue())
+                summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out),
+                                            tf.Summary.Value(tag = "Labels", image = labels)])
                 callback.writer.add_summary(summary, epoch)
                 callback.writer.flush() 
+            if (epoch > 0 and epoch % 50 == 0):
+                self.restore_epoch = batch_id
+                print(self.model_dir)
+                self.gan.save_weights(self.model_dir + "gan_weights" + str(self.restore_epoch) + ".h5")
 
-
-            for i in trange(0, self.log_step):
-                for j in range(0,5):
-                    try:
-                        x_real, label_org = next(data_iter)
-                    except:
-                        data_iter = iter(self.data_loader)
-                        x_real, label_org = next(data_iter)  
-
-
-                    label_trg = np.flip(label_org, axis=0)
-
-                    noise = np.random.uniform(-1., 1., size=[self.batch_size,1,1,100])
-                    label_trg_ = label_trg.reshape(self.batch_size,1,1,self.n_labels)
-                    x_fake = self.G.predict([noise, label_trg_])
-
-                    d_real_labels = np.ones([self.batch_size,1])
-                    d_fake_labels = np.zeros([self.batch_size,1])
-
-                    d_loss_real = self.D.train_on_batch([x_real, label_org],[d_real_labels])
-                    d_loss_fake = self.D.train_on_batch([x_fake, label_trg],[d_fake_labels])
-                    d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-
-                    batch_id += 1
-                    
-                    g_labels = np.ones([self.batch_size,1])
-                    g_loss = self.gan.train_on_batch([noise, label_trg_],[g_labels])
-
-                    write_log(callback, ['d_loss'], [d_loss], batch_id)
-                    write_log(callback, ['g_loss'], [g_loss], batch_id)
-
+                self.store_optimizer(self.D, "discriminator")
+                self.store_optimizer(self.gan, "gan")
+                
 
 
 
