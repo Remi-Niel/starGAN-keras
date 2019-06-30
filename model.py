@@ -30,7 +30,7 @@ def ResidualBlock(x, n_filters):
 # Create and return generator model
 def get_generator(n_filters = 64, n_labels = 5, repeat_num = 6, im_size = 128):
     input_img = Input(shape = (im_size, im_size, 3 + n_labels))
-    
+    n_filters += n_labels
     down_0 = ConvBlock(input_img, n_filters = n_filters, kernel_size = 7, strides = 1)
 
     # Down-sampling layers

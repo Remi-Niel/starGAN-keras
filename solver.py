@@ -15,6 +15,8 @@ from tqdm import trange
 from keras.layers.merge import _Merge
 import keras.backend as K
 import pickle
+from PIL import Image
+
 
 def write_log(callback, names, logs, batch_no):
     for name, value in zip(names, logs):
@@ -101,7 +103,8 @@ class Solver(object):
         self.resume_iters = config.resume_iters
         self.selected_attrs = config.selected_attrs
 
-        self.test_iters = config.test_iters
+        self.test_file = config.test_file
+        self.test_labels = config.test_labels
         self.use_tensorboard = config.use_tensorboard
 
         self.log_dir = "stargan/logs/"
@@ -190,7 +193,7 @@ class Solver(object):
         out[np.arange(batch_size), labels.astype(np.int_)] = 1
         return out
 
-    def create_labels(self, c_org, c_dim=5, dataset='CelebA', selected_attrs=None):
+    def create_labels(self, c_org, c_dim=5, selected_attrs=None):
         """Generate target domain labels for debugging and testing."""
         # Get hair color indices.
         hair_color_indices = []
@@ -242,7 +245,7 @@ class Solver(object):
         
         test_imgs, label_test = next(data_iter)
         test_imgs = np.tile(test_imgs, (5,1,1,1))
-        c_fixed = np.asarray(self.create_labels(label_test, self.n_labels, self.data_loader, self.selected_attrs))
+        c_fixed = np.asarray(self.create_labels(label_test, self.n_labels, self.selected_attrs))
         c_fixed = np.concatenate(c_fixed, axis = 0)
         labels_fixed = c_fixed.reshape((5 * self.batch_size, 1, 1, 5))
         label_test = np.tile(label_test, (5,1))
@@ -251,51 +254,57 @@ class Solver(object):
 
         batch_id = 0
         total_steps = self.num_iters//self.log_step//self.n_critic
+        steps_before_decay = self.num_iters_decay // self.log_step//self.n_critic
 
         start = 0
         if self.restore_epoch > 0:
             start = self.restore_epoch * self.model_save_step//self.log_step
-            batch_id = start * 5
+            batch_id = self.restore_epoch * self.model_save_step * self.n_critic
             
         for epoch in trange(start,total_steps+1):
 
-            reduction = epoch - total_steps/2
-            if (reduction > 0):
-                ratio = 1.0 - (float(reduction) / (total_steps/2.0))
-                lr = (self.g_lr * 0.9 * ratio) + self.g_lr * 0.1
+            reduction = epoch - steps_before_decay
+            if (reduction > 0 == 0):
+                ratio = reduction / (total_steps - steps_before_decay)
+                lr = (self.g_lr * (1.0-ratio)) 
+                print(lr)
                 K.set_value(self.combined.optimizer.lr, lr)
-                lr = (self.d_lr * ratio * 0.9) + self.d_lr * 0.1
+                lr = (self.d_lr * (1.0-ratio)) 
                 K.set_value(self.DIS.optimizer.lr, lr)
-            with keras.backend.get_session().as_default():
-                outcome = self.G.predict(test_imgs_concatted)
-                tmp = np.concatenate((outcome, np.tile(label_test.reshape((5*self.batch_size,1,1,5)),(1,self.image_size,self.image_size,1))),axis=3)
-                cycled = self.G.predict(tmp)
-                s = BytesIO()
 
-                left = self.denorm(test_imgs[epoch%80].reshape((128,128,3)))
-                right = self.denorm(outcome[epoch%80].reshape((128,128,3)))
-                total = np.concatenate((left,right),axis = 1)
+            if (epoch % (self.sample_step / self.log_step) == 0):
+                with keras.backend.get_session().as_default():
+                    outcome = self.G.predict(test_imgs_concatted)
+                    tmp = np.concatenate((outcome, np.tile(label_test.reshape((5*self.batch_size,1,1,5)),(1,self.image_size,self.image_size,1))),axis=3)
+                    cycled = self.G.predict(tmp)
+                    s = BytesIO()
 
-                right = self.denorm(cycled[epoch%80].reshape((128,128,3)))
-                total = np.concatenate((total,right), axis = 1)
+                    left = self.denorm(test_imgs[epoch%(5*self.batch_size)].reshape((self.image_size,self.image_size,3)))
+                    right = self.denorm(outcome[epoch%(5*self.batch_size)].reshape((self.image_size,self.image_size,3)))
+                    total = np.concatenate((left,right),axis = 1)
 
-                plt.imsave(s, total)
-                out = tf.Summary.Image(encoded_image_string = s.getvalue())
-                labels = np.concatenate((label_test[epoch%80].reshape((1,self.n_labels)),labels_fixed[epoch%80].reshape((1,self.n_labels))))
-                s = BytesIO()
-                plt.imsave(s, labels)
-                labels = tf.Summary.Image(encoded_image_string = s.getvalue())
+                    right = self.denorm(cycled[epoch%(5*self.batch_size)].reshape((self.image_size,self.image_size,3)))
+                    total = np.concatenate((total,right), axis = 1)
 
-                summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out),
-                                            tf.Summary.Value(tag = "Labels", image = labels)])
-                callback.writer.add_summary(summary, epoch)
-                callback.writer.flush()
+                    plt.imsave(s, total)
+                    out = tf.Summary.Image(encoded_image_string = s.getvalue())
+                    labels = np.concatenate((label_test[epoch%(5*self.batch_size)].reshape((1,self.n_labels)),labels_fixed[epoch%(5*self.batch_size)].reshape((1,self.n_labels))))
+                    s = BytesIO()
+                    plt.imsave(s, labels)
+                    labels = tf.Summary.Image(encoded_image_string = s.getvalue())
+
+                    summary = tf.Summary(value=[tf.Summary.Value(tag = "In->Out->Cycled", image = out),
+                                                tf.Summary.Value(tag = "Labels", image = labels)])
+                    callback.writer.add_summary(summary, epoch)
+                    callback.writer.flush()
 
 
             d_loss_r = 0
             d_loss_f = 0
+            d_logs = np.zeros(5)
+            g_logs = np.zeros(4)
             for i in trange(0, self.log_step):
-                for j in range(0,5):
+                for j in range(0,self.n_critic):
                     try:
                         x_real, label_org = next(data_iter)
                     except:
@@ -307,7 +316,7 @@ class Solver(object):
                     c_org = label_org.copy()
                     c_trg = label_trg.copy()
 
-                    labels_trg = c_trg.reshape((self.batch_size,1,1,5))
+                    labels_trg = c_trg.reshape((self.batch_size,1,1,self.n_labels))
                     x_concatted = np.concatenate((x_real, np.tile(labels_trg, (1,self.image_size, self.image_size,1))), axis=3)
 
 
@@ -319,22 +328,74 @@ class Solver(object):
 
                     epsilon = np.random.uniform(0, 1, size = (self.batch_size,1,1,1))
                     interpolation = epsilon * x_real + (1-epsilon) * x_fake
-                    d_logs = self.DIS.train_on_batch([x_real, x_fake, interpolation], [np.tile(fake.reshape((self.batch_size,1)),(1,4)), np.tile(real.reshape((self.batch_size,1)),(1,4)), c_org, np.ones(self.batch_size)])    
+                    d_logs += self.DIS.train_on_batch([x_real, x_fake, interpolation], [np.tile(fake.reshape((self.batch_size,1)),(1,4)), np.tile(real.reshape((self.batch_size,1)),(1,4)), c_org, np.ones(self.batch_size)])    
                     batch_id += 1
 
                 tiled_label_org = np.tile(label_org.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
                 tiled_label_trg = np.tile(label_trg.reshape(self.batch_size,1,1,5),(1,self.image_size,self.image_size,1))
-                g_logs = self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(real.reshape((self.batch_size,1)),(1,4)), c_trg])
-                write_log(callback, gen_names, g_logs[1:4], batch_id)
-                write_log(callback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_id)
+                g_logs += self.combined.train_on_batch([x_real, tiled_label_org, tiled_label_trg], [x_real, np.tile(real.reshape((self.batch_size,1)),(1,4)), c_trg])
 
-            if (epoch > 0 and epoch % (self.model_save_step // self.log_step) == 0):
+            d_logs = (d_logs / (self.log_step * self.n_critic)).tolist()
+            g_logs = (g_logs / self.log_step).tolist()
+
+
+            write_log(callback, gen_names, g_logs[1:4], batch_id)
+            write_log(callback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_id)
+
+            if (epoch > start and epoch % (self.model_save_step // self.log_step) == 0):
                 self.restore_epoch += 1
 
                 self.combined.save_weights(self.model_dir + "combined_weights" + str(self.restore_epoch) + ".h5")
 
                 self.store_optimizer(self.combined, "combined")
                 self.store_optimizer(self.DIS, "DIS")
+
+    def test(self):
+        if self.restore_epoch == 0:
+            print("Choose non zero restore epoch for testing")
+            return;
+
+        if self.test_file is None or self.test_labels is None:
+            print("--test_file and --test_labels have to be provided")
+            return;
+
+        self.test_labels = np.asarray(self.test_labels).astype(np.float32)
+
+        img = Image.open(self.test_file)
+        img = img.resize((self.image_size, self.image_size))
+        img = np.asarray(img)
+        img = img.astype(np.float32)
+        img = img / 255
+
+        #normalize:
+        img = (img - 0.5) / 0.5 #normalize to [-1,1]
+
+
+        input_target_labels = np.asarray(self.create_labels(np.asarray([self.test_labels]).reshape(1,self.n_labels), self.n_labels, self.selected_attrs))
+        input_target_labels = input_target_labels.reshape((self.n_labels,1,1,self.n_labels))
+        
+
+        img_tiled = np.tile(img.reshape(1,self.image_size,self.image_size,3),(self.n_labels,1,1,1))
+        concatted_imgs = np.concatenate((img_tiled, np.tile(input_target_labels, (1,self.image_size, self.image_size,1))), axis=3) 
+
+        fake_images = self.G.predict(concatted_imgs)
+
+        fake_images = self.denorm(fake_images)
+        fake_images = fake_images * 255
+
+        for i in range(self.n_labels):
+            im = Image.fromarray(fake_images[i,:,:,:].astype('uint8'))
+            im.save(self.result_dir + str(i)+".png")
+
+
+
+
+
+
+
+
+
+
 
             
 
